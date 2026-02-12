@@ -1,0 +1,38 @@
+{
+  "$schema": "https://openclaw.dev/schema/config.json",
+  "agent": {
+    "name": "iClaw",
+    "model": "anthropic/claude-sonnet-4-20250514",
+    "systemPrompt": "You are iClaw, a helpful AI assistant for iPhone users accessed via iMessage. You help with booking golf tee times, ordering food, making reservations, managing calendars, reading emails, and other tasks. Be friendly, concise, and helpful. Always confirm important actions before executing them."
+  },
+  "channels": {
+    "bluebubbles": {
+      "enabled": true,
+      "serverUrl": "http://localhost:1234",
+      "password": "${BLUEBUBBLES_PASSWORD}"
+    }
+  },
+  "browser": {
+    "enabled": true,
+    "headless": true,
+    "timeout": 30000
+  },
+  "skills": {
+    "enabled": true,
+    "directory": "./workspace/skills"
+  },
+  "integrations": {
+    "gmail": {
+      "enabled": true,
+      "scopes": ["https://www.googleapis.com/auth/gmail.readonly", "https://www.googleapis.com/auth/gmail.send"]
+    },
+    "calendar": {
+      "enabled": true,
+      "scopes": ["https://www.googleapis.com/auth/calendar"]
+    }
+  },
+  "crons": {
+    "enabled": true,
+    "maxPerUser": 5
+  }
+}
