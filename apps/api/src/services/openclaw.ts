@@ -32,10 +32,13 @@ interface OpenClawResponse {
 /**
  * Send a message to OpenClaw Gateway and get a response
  * OpenClaw handles memory, context, and skill execution
+ * 
+ * @param userMessage - The message from the user
+ * @param userId - Unique identifier for the user (phone number) - enables per-user session isolation
  */
 export async function sendToOpenClaw(
   userMessage: string,
-  conversationId?: string
+  userId: string
 ): Promise<string> {
   const gatewayUrl = process.env.OPENCLAW_GATEWAY_URL;
   const gatewayToken = process.env.OPENCLAW_GATEWAY_TOKEN;
@@ -50,7 +53,7 @@ export async function sendToOpenClaw(
   log.debug('Sending to OpenClaw', { 
     endpoint,
     messageLength: userMessage.length,
-    conversationId 
+    userId: userId.substring(0, 6) + '****', // Mask for logs
   });
 
   try {
@@ -70,8 +73,9 @@ export async function sendToOpenClaw(
       body: JSON.stringify({
         model: 'openclaw',
         messages,
-        // OpenClaw manages its own context/memory per conversation
-        // We could pass conversation_id if OpenClaw supports it
+        // Pass user ID for session isolation - OpenClaw derives a stable 
+        // session key from this, giving each user their own memory/context
+        user: userId,
       }),
     });
 
