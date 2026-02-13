@@ -196,6 +196,49 @@ Come back here when you're done!`;
     }
   }
 
+  // ============================================
+  // PLAN SELECTION - Handle "Starter" or "Pro" at any point
+  // ============================================
+  const lowerText = text.toLowerCase().trim();
+  
+  if (lowerText === 'starter' || lowerText.includes('starter plan')) {
+    const link = process.env.STRIPE_STARTER_LINK || '';
+    return `Great choice! 🎯
+
+Here's your Starter plan payment link:
+${link}
+
+Starter Plan - $19/month includes:
+• Text & web browsing
+• Email management
+• Calendar & reminders
+• Weather & news
+• Basic automations
+
+Once payment is complete, I'll get you set up with your personalized AI assistant!
+
+Any questions about the plan?`;
+  }
+
+  if (lowerText === 'pro' || lowerText.includes('pro plan')) {
+    const link = process.env.STRIPE_PRO_LINK || '';
+    return `Excellent choice! 🚀
+
+Here's your Pro plan payment link:
+${link}
+
+Pro Plan - $49/month includes:
+• Everything in Starter
+• Automated alerts & snipers
+• Scheduled tasks (crons)
+• Priority booking
+• 24/7 monitoring
+
+Once payment is complete, you'll have full access to all features!
+
+Any questions about the plan?`;
+  }
+
   return null;
 }
 
