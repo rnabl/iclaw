@@ -2,13 +2,40 @@
 // These routes handle the OAuth flow via browser tap-to-auth
 
 import type { Context } from 'hono';
-import { getUserByPhone, saveIntegration, updateOnboardingState } from '@iclaw/database';
-import { ONBOARDING_STATE, SKILLS } from '@iclaw/core';
+import { saveIntegration, updateOnboardingState, getUserById } from '@iclaw/database';
+import { ONBOARDING_STATE } from '@iclaw/core';
 
 // Google OAuth config
 const GOOGLE_CLIENT_ID = process.env.GOOGLE_CLIENT_ID || '';
 const GOOGLE_CLIENT_SECRET = process.env.GOOGLE_CLIENT_SECRET || '';
 const GOOGLE_REDIRECT_URI = process.env.GOOGLE_REDIRECT_URI || 'http://localhost:3000/oauth/google/callback';
+
+// OpenClaw Droplet config
+const PROVISION_API_URL = process.env.OPENCLAW_PROVISION_URL || 'http://104.131.111.116:3456';
+const PROVISION_SECRET = process.env.OPENCLAW_PROVISION_SECRET || 'iclaw-provision-2026';
+
+/**
+ * Push OAuth tokens to user's OpenClaw instance on Droplet
+ */
+async function pushTokensToOpenClaw(
+  phoneNumber: string,
+  tokens: { access_token: string; refresh_token?: string; expires_at: string }
+): Promise<void> {
+  const response = await fetch(`${PROVISION_API_URL}/oauth`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      phone: phoneNumber,
+      provider: 'google',
+      tokens,
+      secret: PROVISION_SECRET,
+    }),
+  });
+
+  if (!response.ok) {
+    throw new Error(`Failed to push tokens: ${response.status}`);
+  }
+}
 
 /**
  * Generate OAuth URL for Google
@@ -123,7 +150,7 @@ export async function googleCallbackHandler(c: Context) {
     // Calculate expiry
     const expiresAt = new Date(Date.now() + tokens.expires_in * 1000);
 
-    // Save integration to database
+    // Save integration to database (iClaw's Supabase)
     await saveIntegration(state, 'google', {
       accessToken: tokens.access_token,
       refreshToken: tokens.refresh_token,
@@ -132,6 +159,22 @@ export async function googleCallbackHandler(c: Context) {
     });
 
     console.log(`[OAuth] Successfully saved Google tokens for user ${state}`);
+
+    // Also push tokens to user's OpenClaw instance on the Droplet
+    try {
+      const user = await getUserById(state);
+      if (user?.phone_number) {
+        await pushTokensToOpenClaw(user.phone_number, {
+          access_token: tokens.access_token,
+          refresh_token: tokens.refresh_token,
+          expires_at: expiresAt.toISOString(),
+        });
+        console.log(`[OAuth] Pushed tokens to OpenClaw for user ${state}`);
+      }
+    } catch (e) {
+      console.error('[OAuth] Failed to push tokens to OpenClaw:', e);
+      // Don't fail the flow - tokens are still saved in Supabase
+    }
 
     // Show success page
     return c.html(`

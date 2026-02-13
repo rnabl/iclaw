@@ -26,6 +26,26 @@ export async function getUserByPhone(phoneNumber: string): Promise<User | null> 
 }
 
 /**
+ * Get user by ID
+ */
+export async function getUserById(userId: string): Promise<User | null> {
+  const supabase = getSupabaseClient();
+
+  const { data, error } = await supabase
+    .from('users')
+    .select('*')
+    .eq('id', userId)
+    .single();
+
+  if (error && error.code !== 'PGRST116') {
+    console.error('[DB] Error fetching user by ID:', error);
+    throw error;
+  }
+
+  return data as User | null;
+}
+
+/**
  * Get user by Stripe customer ID
  */
 export async function getUserByStripeId(stripeCustomerId: string): Promise<User | null> {
