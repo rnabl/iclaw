@@ -333,6 +333,33 @@ export async function getUserIntegrations(userId: string): Promise<Integration[]
 }
 
 /**
+ * Save OpenClaw instance config for a user
+ */
+export async function saveOpenClawConfig(
+  phoneNumber: string,
+  port: number,
+  token: string
+): Promise<boolean> {
+  const supabase = getSupabaseAdminClient();
+
+  const { error } = await supabase
+    .from('users')
+    .update({
+      openclaw_port: port,
+      openclaw_token: token,
+      openclaw_provisioned_at: new Date().toISOString(),
+    })
+    .eq('phone_number', phoneNumber);
+
+  if (error) {
+    console.error('[DB] Error saving OpenClaw config:', error);
+    return false;
+  }
+
+  return true;
+}
+
+/**
  * Check if user has completed OAuth for required skills
  */
 export async function hasRequiredIntegrations(

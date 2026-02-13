@@ -2,7 +2,7 @@
 
 import type { Context } from 'hono';
 import { createLogger, ONBOARDING_STATE } from '@iclaw/core';
-import { updateUserTierByStripeId, updateUserTierByPhone, updateOnboardingState, linkStripeCustomer } from '@iclaw/database';
+import { updateUserTierByStripeId, updateUserTierByPhone, updateOnboardingState, linkStripeCustomer, saveOpenClawConfig } from '@iclaw/database';
 import { createSendblueClient } from '@iclaw/sendblue';
 import type { UserTier } from '@iclaw/core';
 
@@ -11,6 +11,43 @@ const log = createLogger('StripeWebhook');
 // Price IDs from environment
 const STARTER_PRICE_ID = process.env.STRIPE_STARTER_PRICE_ID || '';
 const PRO_PRICE_ID = process.env.STRIPE_PRO_PRICE_ID || '';
+
+// OpenClaw provisioning API
+const PROVISION_API_URL = process.env.OPENCLAW_PROVISION_URL || 'http://104.131.111.116:3456';
+const PROVISION_SECRET = process.env.OPENCLAW_PROVISION_SECRET || 'iclaw-provision-2026';
+
+// Track next available port (start at 18001)
+let nextPort = 18001;
+
+/**
+ * Provision a new OpenClaw instance for a user
+ */
+async function provisionOpenClawInstance(phoneNumber: string): Promise<{ port: number; token: string } | null> {
+  try {
+    const port = nextPort++;
+    
+    const response = await fetch(`${PROVISION_API_URL}/provision`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        phone: phoneNumber,
+        port,
+        secret: PROVISION_SECRET,
+      }),
+    });
+
+    if (!response.ok) {
+      log.error('Provision API error', { status: response.status });
+      return null;
+    }
+
+    const data = await response.json();
+    return { port: data.port || port, token: data.token };
+  } catch (error) {
+    log.error('Failed to provision OpenClaw instance', error);
+    return null;
+  }
+}
 
 /**
  * Map price ID to tier
@@ -109,6 +146,14 @@ export async function stripeWebhookHandler(c: Context) {
           // Update user tier by phone
           const success = await updateUserTierByPhone(phoneNumber, tier);
           log.info('Updated user tier by phone', { phoneNumber, tier, success });
+
+          // Provision OpenClaw instance for this user
+          const provisionResult = await provisionOpenClawInstance(phoneNumber);
+          if (provisionResult) {
+            log.info('Provisioned OpenClaw instance', provisionResult);
+            // Save port and token to database
+            await saveOpenClawConfig(phoneNumber, provisionResult.port, provisionResult.token);
+          }
 
           // Move to next onboarding state
           try {
