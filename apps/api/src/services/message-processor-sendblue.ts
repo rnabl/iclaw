@@ -136,8 +136,12 @@ async function handleSpecialFlows(user: User, text: string): Promise<string | nu
   // SELECTING PLAN - Starter or Pro
   // ============================================
   if (state === ONBOARDING_STATE.SELECTING_PLAN) {
+    // Append phone number to payment link so Stripe webhook can identify user
+    const encodedPhone = encodeURIComponent(user.phone_number);
+
     if (lowerText === 'starter' || lowerText === '1') {
-      const link = process.env.STRIPE_STARTER_LINK || '';
+      const baseLink = process.env.STRIPE_STARTER_LINK || '';
+      const link = `${baseLink}?client_reference_id=${encodedPhone}`;
       try {
         await updateOnboardingState(user.phone_number, ONBOARDING_STATE.AWAITING_PAYMENT);
       } catch (e) {
@@ -147,7 +151,8 @@ async function handleSpecialFlows(user: User, text: string): Promise<string | nu
     }
 
     if (lowerText === 'pro' || lowerText === '2') {
-      const link = process.env.STRIPE_PRO_LINK || '';
+      const baseLink = process.env.STRIPE_PRO_LINK || '';
+      const link = `${baseLink}?client_reference_id=${encodedPhone}`;
       try {
         await updateOnboardingState(user.phone_number, ONBOARDING_STATE.AWAITING_PAYMENT);
       } catch (e) {

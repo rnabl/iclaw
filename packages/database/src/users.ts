@@ -165,6 +165,28 @@ export async function updateUserTierByStripeId(
 }
 
 /**
+ * Update user tier by phone number
+ */
+export async function updateUserTierByPhone(
+  phoneNumber: string,
+  tier: UserTier
+): Promise<boolean> {
+  const supabase = getSupabaseAdminClient();
+
+  const { error } = await supabase
+    .from('users')
+    .update({ tier })
+    .eq('phone_number', phoneNumber);
+
+  if (error) {
+    console.error('[DB] Error updating user tier by phone:', error);
+    return false;
+  }
+
+  return true;
+}
+
+/**
  * Get or create user by phone number
  */
 export async function getOrCreateUser(phoneNumber: string): Promise<User> {

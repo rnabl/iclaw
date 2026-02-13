@@ -1,8 +1,9 @@
 // Stripe webhook handler
 
 import type { Context } from 'hono';
-import { createLogger } from '@iclaw/core';
-import { updateUserTierByStripeId } from '@iclaw/database';
+import { createLogger, ONBOARDING_STATE } from '@iclaw/core';
+import { updateUserTierByStripeId, updateUserTierByPhone, updateOnboardingState, linkStripeCustomer } from '@iclaw/database';
+import { createSendblueClient } from '@iclaw/sendblue';
 import type { UserTier } from '@iclaw/core';
 
 const log = createLogger('StripeWebhook');
@@ -84,11 +85,58 @@ export async function stripeWebhookHandler(c: Context) {
 
       case 'checkout.session.completed': {
         const session = event.data.object;
+        const phoneNumber = session.client_reference_id; // Phone number we passed
+        const customerId = session.customer as string;
+        const mode = session.mode;
+
         log.info('Checkout completed', { 
-          customerId: session.customer,
-          mode: session.mode 
+          customerId,
+          phoneNumber,
+          mode 
         });
-        // Subscription events will handle tier updates
+
+        // If we have a phone number, link customer and update tier
+        if (phoneNumber) {
+          // Link Stripe customer ID to user
+          await linkStripeCustomer(phoneNumber, customerId);
+
+          // Determine tier from session (for one-time or subscription)
+          let tier: UserTier = 'starter';
+          if (session.amount_total && session.amount_total >= 4900) {
+            tier = 'pro';
+          }
+
+          // Update user tier by phone
+          const success = await updateUserTierByPhone(phoneNumber, tier);
+          log.info('Updated user tier by phone', { phoneNumber, tier, success });
+
+          // Move to next onboarding state
+          try {
+            await updateOnboardingState(phoneNumber, ONBOARDING_STATE.SETTING_UP_SKILLS);
+          } catch (e) {
+            log.warn('Could not update onboarding state', e);
+          }
+
+          // Send confirmation message via Sendblue
+          try {
+            const sendblue = createSendblueClient();
+            await sendblue.sendMessage(
+              phoneNumber,
+              `Payment received ✅
+
+Spinning up your assistant...
+
+✓ Your own AI instance
+✓ Your data stays yours
+✓ Available 24/7
+
+Reply "ready" when you want to continue setup!`
+            );
+            log.info('Sent payment confirmation', { phoneNumber });
+          } catch (e) {
+            log.error('Failed to send payment confirmation', e);
+          }
+        }
         break;
       }
 
