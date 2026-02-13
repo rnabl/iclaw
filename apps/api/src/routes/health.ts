@@ -1,40 +1,15 @@
-// Health check endpoint
+// Health check endpoint - must respond fast, no external calls
 
 import type { Context } from 'hono';
-import { createBlueBubblesClient } from '@iclaw/bluebubbles';
 
 export async function healthHandler(c: Context) {
-  const checks: Record<string, boolean> = {
-    api: true,
-    bluebubbles: false,
-    database: false,
-  };
-
-  // Check BlueBubbles connection
-  try {
-    const bb = createBlueBubblesClient();
-    checks.bluebubbles = await bb.ping();
-  } catch {
-    checks.bluebubbles = false;
-  }
-
-  // Check database connection (basic check)
-  try {
-    const url = process.env.SUPABASE_URL;
-    const key = process.env.SUPABASE_ANON_KEY;
-    checks.database = !!(url && key);
-  } catch {
-    checks.database = false;
-  }
-
-  const allHealthy = Object.values(checks).every(Boolean);
-
+  // Simple health check - just confirm API is running
+  // Don't call external services (Supabase, BlueBubbles) - they can hang
   return c.json(
     {
-      status: allHealthy ? 'healthy' : 'degraded',
-      checks,
+      status: 'ok',
       timestamp: new Date().toISOString(),
     },
-    allHealthy ? 200 : 503
+    200
   );
 }
