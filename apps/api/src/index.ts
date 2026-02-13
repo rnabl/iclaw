@@ -41,18 +41,15 @@ app.get('/oauth/google/callback', googleCallbackHandler);
 // Export for different runtimes
 export default app;
 
-// Start server if running directly
+// Start server
 const port = process.env.PORT || 3000;
 
-if (process.env.NODE_ENV !== 'production') {
-  console.log(`🚀 iClaw API starting on port ${port}`);
-  
-  // For local development with Node.js
-  import('@hono/node-server').then(({ serve }) => {
-    serve({
-      fetch: app.fetch,
-      port: Number(port),
-    });
-    console.log(`✅ Server running at http://localhost:${port}`);
+console.log(`🚀 iClaw API starting on port ${port}`);
+
+import('@hono/node-server').then(({ serve }) => {
+  serve({
+    fetch: app.fetch,
+    port: Number(port),
   });
-}
+  console.log(`✅ Server running on port ${port}`);
+});
