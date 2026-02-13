@@ -3,10 +3,12 @@
 export interface SendblueConfig {
   apiKey: string;
   apiSecret: string;
+  fromNumber: string;
 }
 
 export interface SendMessageRequest {
   number: string; // E.164 format recipient
+  from_number: string; // E.164 format sender (your Sendblue number)
   content?: string;
   media_url?: string;
   send_style?: 'celebration' | 'fireworks' | 'confetti' | 'heart' | 'lasers' | 'love' | 'spotlight' | 'echo';

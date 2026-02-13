@@ -13,10 +13,12 @@ const SENDBLUE_API_URL = 'https://api.sendblue.co/api';
 export class SendblueClient {
   private apiKey: string;
   private apiSecret: string;
+  private fromNumber: string;
 
   constructor(config: SendblueConfig) {
     this.apiKey = config.apiKey;
     this.apiSecret = config.apiSecret;
+    this.fromNumber = config.fromNumber;
   }
 
   /**
@@ -65,6 +67,7 @@ export class SendblueClient {
 
     const payload: SendMessageRequest = {
       number: phoneNumber,
+      from_number: this.fromNumber,
       content: message,
       ...options,
     };
@@ -109,10 +112,11 @@ export class SendblueClient {
 export function createSendblueClient(): SendblueClient {
   const apiKey = process.env.SENDBLUE_API_KEY;
   const apiSecret = process.env.SENDBLUE_API_SECRET;
+  const fromNumber = process.env.SENDBLUE_FROM_NUMBER;
 
-  if (!apiKey || !apiSecret) {
-    throw new Error('Missing SENDBLUE_API_KEY or SENDBLUE_API_SECRET');
+  if (!apiKey || !apiSecret || !fromNumber) {
+    throw new Error('Missing SENDBLUE_API_KEY, SENDBLUE_API_SECRET, or SENDBLUE_FROM_NUMBER');
   }
 
-  return new SendblueClient({ apiKey, apiSecret });
+  return new SendblueClient({ apiKey, apiSecret, fromNumber });
 }
