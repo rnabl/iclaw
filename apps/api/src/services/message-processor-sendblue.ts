@@ -19,7 +19,11 @@ import {
   getProUpsellMessage,
 } from '@iclaw/skills';
 import { generateAIResponse } from './ai';
+import { sendToOpenClaw } from './openclaw';
 import { generateOAuthLink } from '../routes/oauth';
+
+// Feature flag: use OpenClaw Gateway instead of direct Anthropic
+const USE_OPENCLAW = process.env.USE_OPENCLAW === 'true';
 
 const log = createLogger('MessageProcessor:Sendblue');
 
@@ -293,12 +297,21 @@ function parseSkillSelection(text: string): SkillId[] {
 
 /**
  * Generate AI response for normal messages
+ * Routes through OpenClaw Gateway if enabled, otherwise uses direct Anthropic
  */
 async function generateResponse(
   user: User,
   text: string,
   message: ParsedMessage
 ): Promise<string> {
+  // If OpenClaw is enabled, route through the Gateway
+  // OpenClaw handles memory, context, and skill execution natively
+  if (USE_OPENCLAW) {
+    log.debug('Routing to OpenClaw Gateway');
+    return sendToOpenClaw(text, user.phone_number);
+  }
+
+  // Fallback: Direct Anthropic integration (legacy)
   const matchedSkill = SkillRegistry.findMatching(text);
 
   if (matchedSkill && user.tier !== 'none') {
