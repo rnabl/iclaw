@@ -93,6 +93,12 @@ async function handleSpecialFlows(user: User, text: string): Promise<string | nu
   // SELECTING SKILLS - Parse their selection
   // ============================================
   if (state === ONBOARDING_STATE.SELECTING_SKILLS) {
+    // Check if it's a greeting - they might be confused, resend welcome
+    const greetings = ['hey', 'hi', 'hello', 'yo', 'sup', 'start', 'help'];
+    if (greetings.includes(text.toLowerCase().trim())) {
+      return MESSAGES.WELCOME;
+    }
+
     const selectedSkills = parseSkillSelection(text);
 
     if (selectedSkills.length === 0) {

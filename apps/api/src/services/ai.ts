@@ -1,7 +1,7 @@
 // AI service - handles Claude API interactions
 
 import Anthropic from '@anthropic-ai/sdk';
-import { createLogger, DEFAULT_MODEL, MAX_HISTORY_MESSAGES } from '@iclaw/core';
+import { createLogger, DEFAULT_MODEL, MAX_HISTORY_MESSAGES, stripMarkdown } from '@iclaw/core';
 import type { ConversationContext } from '@iclaw/core';
 
 const log = createLogger('AI');
@@ -76,7 +76,8 @@ export async function generateAIResponse(
       outputTokens: response.usage.output_tokens,
     });
 
-    return textContent.text;
+    // Strip any markdown for iMessage compatibility
+    return stripMarkdown(textContent.text);
   } catch (error) {
     log.error('AI generation error', error);
 

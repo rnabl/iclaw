@@ -172,6 +172,31 @@ export function maskPhoneNumber(phone: string): string {
 }
 
 /**
+ * Strip markdown formatting for iMessage
+ * Converts markdown to plain text
+ */
+export function stripMarkdown(text: string): string {
+  return text
+    // Remove bold **text** or __text__
+    .replace(/\*\*(.+?)\*\*/g, '$1')
+    .replace(/__(.+?)__/g, '$1')
+    // Remove italic *text* or _text_
+    .replace(/\*(.+?)\*/g, '$1')
+    .replace(/_(.+?)_/g, '$1')
+    // Remove headers ### 
+    .replace(/^#{1,6}\s+/gm, '')
+    // Remove code blocks ```
+    .replace(/```[\s\S]*?```/g, '')
+    // Remove inline code `text`
+    .replace(/`(.+?)`/g, '$1')
+    // Remove links [text](url) -> text
+    .replace(/\[(.+?)\]\(.+?\)/g, '$1')
+    // Clean up extra whitespace
+    .replace(/\n{3,}/g, '\n\n')
+    .trim();
+}
+
+/**
  * Mask sensitive data for logging
  */
 export function maskSensitive(text: string): string {
