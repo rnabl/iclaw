@@ -1,4 +1,5 @@
 // OpenClaw Gateway client - routes messages through OpenClaw for context, memory, and skills
+// Supports both single-instance (shared) and multi-instance (per-user) modes
 
 import { createLogger, stripMarkdown } from '@iclaw/core';
 
@@ -29,23 +30,43 @@ interface OpenClawResponse {
   };
 }
 
+interface UserOpenClawConfig {
+  port: number;
+  token: string;
+}
+
 /**
  * Send a message to OpenClaw Gateway and get a response
  * OpenClaw handles memory, context, and skill execution
  * 
  * @param userMessage - The message from the user
- * @param userId - Unique identifier for the user (phone number) - enables per-user session isolation
+ * @param userId - Unique identifier for the user (phone number)
+ * @param userConfig - Optional per-user OpenClaw config (port/token) for multi-instance mode
  */
 export async function sendToOpenClaw(
   userMessage: string,
-  userId: string
+  userId: string,
+  userConfig?: UserOpenClawConfig
 ): Promise<string> {
-  const gatewayUrl = process.env.OPENCLAW_GATEWAY_URL;
-  const gatewayToken = process.env.OPENCLAW_GATEWAY_TOKEN;
+  // Determine endpoint and token based on mode
+  let gatewayUrl: string;
+  let gatewayToken: string;
+
+  if (userConfig?.port && userConfig?.token) {
+    // Multi-instance mode: route to user's dedicated container
+    const baseHost = process.env.OPENCLAW_GATEWAY_HOST || '104.131.111.116';
+    gatewayUrl = `http://${baseHost}:${userConfig.port}`;
+    gatewayToken = userConfig.token;
+    log.debug('Using per-user OpenClaw instance', { port: userConfig.port });
+  } else {
+    // Single-instance mode: shared gateway with user isolation via user field
+    gatewayUrl = process.env.OPENCLAW_GATEWAY_URL || '';
+    gatewayToken = process.env.OPENCLAW_GATEWAY_TOKEN || '';
+  }
 
   if (!gatewayUrl || !gatewayToken) {
     log.error('OpenClaw Gateway not configured');
-    throw new Error('OPENCLAW_GATEWAY_URL and OPENCLAW_GATEWAY_TOKEN must be set');
+    throw new Error('OpenClaw Gateway URL and token must be configured');
   }
 
   const endpoint = `${gatewayUrl}/v1/chat/completions`;

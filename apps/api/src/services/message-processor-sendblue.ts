@@ -76,10 +76,18 @@ export async function processMessageSendblue(message: ParsedMessage): Promise<vo
 
 /**
  * Handle onboarding and special conversation flows
+ * 
+ * Flow:
+ * 1. NEW → Welcome + skill selection
+ * 2. SELECTING_SKILLS → Parse selection → Plan options
+ * 3. SELECTING_PLAN → Show payment link
+ * 4. AWAITING_PAYMENT → Wait for Stripe webhook
+ * 5. SETTING_UP_SKILLS → OAuth one by one
+ * 6. READY → Route to OpenClaw
  */
 async function handleSpecialFlows(user: User, text: string): Promise<string | null> {
-  // Safe access - columns might not exist yet
   const state = (user as any).onboarding_state || ONBOARDING_STATE.NEW;
+  const lowerText = text.toLowerCase().trim();
 
   // ============================================
   // NEW USER - Send welcome with skill options
@@ -97,95 +105,141 @@ async function handleSpecialFlows(user: User, text: string): Promise<string | nu
   // SELECTING SKILLS - Parse their selection
   // ============================================
   if (state === ONBOARDING_STATE.SELECTING_SKILLS) {
-    // Check if it's a greeting - they might be confused, resend welcome
+    // Check if it's a greeting - resend welcome
     const greetings = ['hey', 'hi', 'hello', 'yo', 'sup', 'start', 'help'];
-    if (greetings.includes(text.toLowerCase().trim())) {
+    if (greetings.includes(lowerText)) {
       return MESSAGES.WELCOME;
     }
 
-    const selectedSkills = parseSkillSelection(text);
+    const selectedSkills = parseSkillSelectionNew(text);
 
     if (selectedSkills.length === 0) {
-      return `I didn't catch that. Reply with numbers to select:
+      return `I didn't catch that. Reply with a number:
 
-1️⃣ Email
-2️⃣ Calendar
-3️⃣ Food
-4️⃣ Golf
-
-For example: "1 2" or "1, 3, 4"`;
+1️⃣ Email & Calendar
+2️⃣ Research & Web browsing
+3️⃣ Food & Reservations
+4️⃣ All of the above`;
     }
 
     try {
       await updateSelectedSkills(user.phone_number, selectedSkills);
+      await updateOnboardingState(user.phone_number, ONBOARDING_STATE.SELECTING_PLAN);
     } catch (e) {
-      log.warn('Could not save selected skills (column may not exist yet)');
+      log.warn('Could not save skills/state');
     }
 
-    const skillNames = selectedSkills.map((id) => {
-      const skill = SKILLS[id];
-      return `${skill.emoji} ${skill.name}`;
-    });
-
-    const needsOAuth = selectedSkills.some((id) => SKILLS[id].oauthRequired);
-
-    if (needsOAuth) {
-      const baseUrl = process.env.API_BASE_URL || 'https://iclaw-novw8.ondigitalocean.app';
-      const oauthLink = generateOAuthLink(user.id, baseUrl);
-
-      try {
-        await updateOnboardingState(user.phone_number, ONBOARDING_STATE.AWAITING_OAUTH);
-      } catch (e) {
-        log.warn('Could not update onboarding state (column may not exist yet)');
-      }
-
-      return `${MESSAGES.SKILL_SELECTION_CONFIRM(skillNames)}
-
-${MESSAGES.OAUTH_PROMPT(oauthLink)}`;
-    } else {
-      try {
-        await updateOnboardingState(user.phone_number, ONBOARDING_STATE.READY);
-      } catch (e) {
-        log.warn('Could not update onboarding state (column may not exist yet)');
-      }
-
-      return `${MESSAGES.SKILL_SELECTION_CONFIRM(skillNames)}
-
-You're all set! What would you like to do?`;
-    }
+    return MESSAGES.PLAN_OPTIONS;
   }
 
   // ============================================
-  // AWAITING OAUTH - Check if they've authenticated
+  // SELECTING PLAN - Starter or Pro
   // ============================================
-  if (state === ONBOARDING_STATE.AWAITING_OAUTH) {
+  if (state === ONBOARDING_STATE.SELECTING_PLAN) {
+    if (lowerText === 'starter' || lowerText === '1') {
+      const link = process.env.STRIPE_STARTER_LINK || '';
+      try {
+        await updateOnboardingState(user.phone_number, ONBOARDING_STATE.AWAITING_PAYMENT);
+      } catch (e) {
+        log.warn('Could not update state');
+      }
+      return MESSAGES.PAYMENT_LINK('Starter', link);
+    }
+
+    if (lowerText === 'pro' || lowerText === '2') {
+      const link = process.env.STRIPE_PRO_LINK || '';
+      try {
+        await updateOnboardingState(user.phone_number, ONBOARDING_STATE.AWAITING_PAYMENT);
+      } catch (e) {
+        log.warn('Could not update state');
+      }
+      return MESSAGES.PAYMENT_LINK('Pro', link);
+    }
+
+    return `Reply 'Starter' or 'Pro' to choose your plan:
+
+Starter - $19/mo
+Pro - $49/mo`;
+  }
+
+  // ============================================
+  // AWAITING PAYMENT - Remind them to pay
+  // ============================================
+  if (state === ONBOARDING_STATE.AWAITING_PAYMENT) {
+    const starterLink = process.env.STRIPE_STARTER_LINK || '';
+    const proLink = process.env.STRIPE_PRO_LINK || '';
+
+    return `Waiting for payment to complete.
+
+Starter ($19/mo): ${starterLink}
+Pro ($49/mo): ${proLink}
+
+Text me after you've paid!`;
+  }
+
+  // ============================================
+  // SETTING UP SKILLS - OAuth one by one
+  // ============================================
+  if (state === ONBOARDING_STATE.SETTING_UP_SKILLS) {
+    const selectedSkills = (user as any).selected_skills || [];
+    const baseUrl = process.env.API_BASE_URL || 'https://iclaw-novw8.ondigitalocean.app';
+
+    // Check what's already connected
     try {
-      const { complete } = await hasRequiredIntegrations(
-        user.id,
-        (user as any).selected_skills || []
-      );
+      const { complete, missing } = await hasRequiredIntegrations(user.id, selectedSkills);
 
       if (complete) {
-        try {
-          await updateOnboardingState(user.phone_number, ONBOARDING_STATE.READY);
-        } catch (e) {
-          log.warn('Could not update onboarding state');
-        }
-        return MESSAGES.OAUTH_SUCCESS(['Gmail', 'Calendar']);
+        await updateOnboardingState(user.phone_number, ONBOARDING_STATE.READY);
+        return MESSAGES.SETUP_COMPLETE;
+      }
+
+      // Prompt for next missing integration
+      if (missing.includes('gmail')) {
+        const link = generateOAuthLink(user.id, baseUrl);
+        return MESSAGES.SETUP_GMAIL(link);
+      }
+
+      if (missing.includes('calendar')) {
+        const link = generateOAuthLink(user.id, baseUrl);
+        return MESSAGES.SETUP_CALENDAR(link);
       }
     } catch (e) {
-      log.warn('Could not check integrations (table may not exist yet)');
+      log.warn('Could not check integrations');
+    }
+
+    // If no OAuth needed, mark ready
+    try {
+      await updateOnboardingState(user.phone_number, ONBOARDING_STATE.READY);
+    } catch (e) {
+      log.warn('Could not update state');
+    }
+    return MESSAGES.SETUP_COMPLETE;
+  }
+
+  // ============================================
+  // AWAITING OAUTH - Check if they've connected
+  // ============================================
+  if (state === ONBOARDING_STATE.AWAITING_OAUTH) {
+    const selectedSkills = (user as any).selected_skills || [];
+
+    try {
+      const { complete } = await hasRequiredIntegrations(user.id, selectedSkills);
+
+      if (complete) {
+        await updateOnboardingState(user.phone_number, ONBOARDING_STATE.READY);
+        return MESSAGES.SETUP_COMPLETE;
+      }
+    } catch (e) {
+      log.warn('Could not check integrations');
     }
 
     const baseUrl = process.env.API_BASE_URL || 'https://iclaw-novw8.ondigitalocean.app';
     const oauthLink = generateOAuthLink(user.id, baseUrl);
 
-    return `Looks like you haven't connected your account yet.
-
-Tap to sign in with Google:
+    return `Tap to connect your account:
 ${oauthLink}
 
-Come back here when you're done!`;
+Text me when you're done!`;
   }
 
   // ============================================
@@ -198,99 +252,44 @@ Come back here when you're done!`;
         return getProUpsellMessage(proFeature, process.env.STRIPE_PRO_LINK || '');
       }
     }
-  }
-
-  // ============================================
-  // PLAN SELECTION - Handle "Starter" or "Pro" at any point
-  // ============================================
-  const lowerText = text.toLowerCase().trim();
-  
-  if (lowerText === 'starter' || lowerText.includes('starter plan')) {
-    const link = process.env.STRIPE_STARTER_LINK || '';
-    return `Great choice! 🎯
-
-Here's your Starter plan payment link:
-${link}
-
-Starter Plan - $19/month includes:
-• Text & web browsing
-• Email management
-• Calendar & reminders
-• Weather & news
-• Basic automations
-
-Once payment is complete, I'll get you set up with your personalized AI assistant!
-
-Any questions about the plan?`;
-  }
-
-  if (lowerText === 'pro' || lowerText.includes('pro plan')) {
-    const link = process.env.STRIPE_PRO_LINK || '';
-    return `Excellent choice! 🚀
-
-Here's your Pro plan payment link:
-${link}
-
-Pro Plan - $49/month includes:
-• Everything in Starter
-• Automated alerts & snipers
-• Scheduled tasks (crons)
-• Priority booking
-• 24/7 monitoring
-
-Once payment is complete, you'll have full access to all features!
-
-Any questions about the plan?`;
+    // Fall through to OpenClaw
+    return null;
   }
 
   return null;
 }
 
 /**
- * Parse skill selection from user input
+ * Parse skill selection from new flow (1-4 options)
  */
-function parseSkillSelection(text: string): SkillId[] {
+function parseSkillSelectionNew(text: string): SkillId[] {
   const normalized = text.toLowerCase().trim();
-  const selected: SkillId[] = [];
 
-  if (normalized === 'all' || normalized.includes('all')) {
+  // Option 4 = all
+  if (normalized === '4' || normalized === 'all' || normalized.includes('all')) {
     return ['email', 'calendar', 'food', 'golf'];
   }
 
-  const numberMap: Record<string, SkillId> = {
-    '1': 'email',
-    '2': 'calendar',
-    '3': 'food',
-    '4': 'golf',
-  };
-
-  for (const [num, skill] of Object.entries(numberMap)) {
-    if (normalized.includes(num)) {
-      selected.push(skill);
-    }
+  // Option 1 = Email & Calendar
+  if (normalized === '1') {
+    return ['email', 'calendar'];
   }
 
-  if (selected.length === 0) {
-    const nameMap: Record<string, SkillId> = {
-      email: 'email',
-      mail: 'email',
-      gmail: 'email',
-      calendar: 'calendar',
-      schedule: 'calendar',
-      food: 'food',
-      delivery: 'food',
-      order: 'food',
-      restaurant: 'food',
-      golf: 'golf',
-      tee: 'golf',
-    };
-
-    for (const [keyword, skill] of Object.entries(nameMap)) {
-      if (normalized.includes(keyword) && !selected.includes(skill)) {
-        selected.push(skill);
-      }
-    }
+  // Option 2 = Research (no specific skills, just web)
+  if (normalized === '2') {
+    return []; // Web browsing is built-in, no OAuth needed
   }
+
+  // Option 3 = Food & Reservations
+  if (normalized === '3') {
+    return ['food'];
+  }
+
+  // Try parsing multiple numbers
+  const selected: SkillId[] = [];
+  if (normalized.includes('1')) selected.push('email', 'calendar');
+  if (normalized.includes('3')) selected.push('food');
+  if (normalized.includes('4')) return ['email', 'calendar', 'food', 'golf'];
 
   return selected;
 }
@@ -307,8 +306,17 @@ async function generateResponse(
   // If OpenClaw is enabled, route through the Gateway
   // OpenClaw handles memory, context, and skill execution natively
   if (USE_OPENCLAW) {
-    log.debug('Routing to OpenClaw Gateway');
-    return sendToOpenClaw(text, user.phone_number);
+    // Check if user has their own OpenClaw instance (multi-tenant mode)
+    const userConfig = (user as any).openclaw_port && (user as any).openclaw_token
+      ? { port: (user as any).openclaw_port, token: (user as any).openclaw_token }
+      : undefined;
+
+    log.debug('Routing to OpenClaw Gateway', { 
+      multiTenant: !!userConfig,
+      port: userConfig?.port 
+    });
+
+    return sendToOpenClaw(text, user.phone_number, userConfig);
   }
 
   // Fallback: Direct Anthropic integration (legacy)

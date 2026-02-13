@@ -99,6 +99,9 @@ export const PRO_ONLY_FEATURES = [
 export const ONBOARDING_STATE = {
   NEW: 'new',                        // First message ever
   SELECTING_SKILLS: 'selecting',     // Choosing what they want
+  SELECTING_PLAN: 'selecting_plan',  // Choosing Starter or Pro
+  AWAITING_PAYMENT: 'awaiting_payment', // Waiting for Stripe payment
+  SETTING_UP_SKILLS: 'setting_up',   // Connecting OAuth one by one
   AWAITING_OAUTH: 'awaiting_oauth',  // Waiting for OAuth completion
   READY: 'ready',                    // Setup complete, ready to use
 } as const;
@@ -150,21 +153,62 @@ export const ERRORS = {
  * Success messages
  */
 export const MESSAGES = {
-  WELCOME: `Hey! I'm iClaw 🦞
+  WELCOME: `Welcome to iClaw 🦞
 
-Your AI assistant, right here in iMessage.
+Your own OpenClaw assistant.
+Private. Isolated. Running 24/7.
 
-What would you like help with?
-
-1️⃣ Email - Read, summarize, send
-2️⃣ Calendar - Check schedule, book meetings
-3️⃣ Food - Order delivery, reservations
-4️⃣ Golf - Book tee times
-
-Reply with numbers (e.g., "1 2" or "1, 2, 3")`,
+What do you want help with?
+1️⃣ Email & Calendar
+2️⃣ Research & Web browsing
+3️⃣ Food & Reservations
+4️⃣ All of the above`,
 
   SKILL_SELECTION_CONFIRM: (skills: string[]) => `Great choices! You selected:
 ${skills.map(s => `✓ ${s}`).join('\n')}`,
+
+  PLAN_OPTIONS: `Perfect! Choose your plan:
+
+Starter - $19/mo
+• Unlimited messages
+• Email & calendar
+• Web browsing & research
+
+Pro - $49/mo
+• Everything in Starter
+• Automated tasks & alerts
+• Priority support
+
+Reply 'Starter' or 'Pro'`,
+
+  PAYMENT_LINK: (plan: string, link: string) => `${plan} plan - great choice!
+
+Tap to pay:
+${link}`,
+
+  PAYMENT_RECEIVED: `Payment received ✅
+
+Spinning up your assistant...
+
+✓ Your own AI instance
+✓ Your data stays yours
+✓ Available 24/7`,
+
+  SETUP_GMAIL: (link: string) => `Let's connect your skills 👇
+
+📧 Gmail - Tap to connect:
+${link}`,
+
+  SETUP_CALENDAR: (link: string) => `Gmail connected ✅
+
+📅 Calendar - Tap to connect:
+${link}`,
+
+  SETUP_COMPLETE: `All set! 🦞
+
+Your assistant is live. Just text me anytime.
+
+Try: "What's on my calendar tomorrow?"`,
 
   OAUTH_PROMPT: (link: string) => `Let's connect your account.
 
