@@ -164,6 +164,14 @@ export function formatDate(date: Date | string): string {
 }
 
 /**
+ * Mask phone number for logging (keeps first 6 digits, masks rest)
+ */
+export function maskPhoneNumber(phone: string): string {
+  if (phone.length <= 6) return phone;
+  return phone.substring(0, 6) + '****';
+}
+
+/**
  * Mask sensitive data for logging
  */
 export function maskSensitive(text: string): string {

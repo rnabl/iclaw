@@ -17,6 +17,7 @@
     "@iclaw/bluebubbles": "workspace:*",
     "@iclaw/core": "workspace:*",
     "@iclaw/database": "workspace:*",
+    "@iclaw/sendblue": "workspace:*",
     "@iclaw/skills": "workspace:*",
     "dotenv": "^17.3.0",
     "hono": "^4.0.0"
