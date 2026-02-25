@@ -28,6 +28,9 @@ import '../workflows';
 
 const app = new Hono();
 
+// Simple in-memory session store for ephemeral tokens
+const sessionStore = new Map<string, { tenantId: string; expiresAt: number; purpose: string }>();
+
 // =============================================================================
 // HEALTH & INFO
 // =============================================================================
@@ -243,14 +246,14 @@ app.post('/execute', async (c) => {
       }
       
       const token = authHeader.substring(7);
-      const sessionData = await vault.get(`session:${token}`);
+      const session = sessionStore.get(token);
       
-      if (!sessionData) {
+      if (!session) {
         return c.json({ error: 'Invalid or expired token' }, 401);
       }
       
-      const session = JSON.parse(sessionData);
       if (session.expiresAt < Date.now()) {
+        sessionStore.delete(token);
         return c.json({ error: 'Token expired' }, 401);
       }
       
@@ -837,12 +840,11 @@ app.post('/agents/outreach/launch', async (c) => {
       const expiresAt = Date.now() + 60 * 60 * 1000; // 1 hour
       
       // Store the session token
-      await vault.set(`session:${ephemeralToken}`, JSON.stringify({
+      sessionStore.set(ephemeralToken, {
         tenantId,
-        createdAt: Date.now(),
         expiresAt,
         purpose: 'outreach-agent'
-      }));
+      });
       
       // Use node directly with tsx as ESM loader
       const isWindows = process.platform === 'win32';
