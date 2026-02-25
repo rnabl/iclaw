@@ -166,4 +166,27 @@ registry.register({
   },
 });
 
+// Register discover_businesses tool (wrapper for workflow)
+import { discoverBusinessesTool } from './discover-businesses';
+registry.register({
+  id: 'discover_businesses',
+  name: 'discover_businesses',
+  description: 'Discover businesses matching a query and location',
+  version: '1.0.0',
+  costClass: 'medium',
+  estimatedCostUsd: 0.01,
+  requiredSecrets: [],
+  tags: ['discovery', 'businesses', 'search'],
+  inputSchema: {
+    type: 'object',
+    properties: {
+      query: { type: 'string', description: 'Business type (e.g., "HVAC")' },
+      location: { type: 'string', description: 'City and state' },
+      maxResults: { type: 'number', description: 'Max results (default: 20)' }
+    },
+    required: ['query', 'location']
+  },
+  handler: discoverBusinessesTool.execute
+});
+
 export { SendGmailInputSchema, SendGmailOutputSchema, sendGmailHandler };
