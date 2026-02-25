@@ -1247,5 +1247,26 @@ app.get('/api/v1/oauth/google/account', async (c) => {
 // EXPORT
 // =============================================================================
 
+// Test endpoint for Gmail (temporary, for debugging)
+app.post('/test/send-email', async (c) => {
+  try {
+    const body = await c.req.json();
+    const { to, subject, body: emailBody } = body;
+    
+    const { sendGmailHandler } = await import('../tools/send-gmail');
+    
+    const result = await sendGmailHandler({
+      to: to || 'ryan@nabl.ai',
+      subject: subject || 'Test from OneClaw',
+      body: emailBody || 'This is a test email!',
+      fromName: 'OneClaw Test'
+    }, { tenantId: 'default' });
+    
+    return c.json(result);
+  } catch (error) {
+    return c.json({ error: String(error) }, 500);
+  }
+});
+
 export default app;
 export { app as harnessApi };
