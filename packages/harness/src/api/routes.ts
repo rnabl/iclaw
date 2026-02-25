@@ -257,13 +257,27 @@ app.post('/execute', async (c) => {
         return c.json({ error: 'Token expired' }, 401);
       }
       
-      // Execute the tool (via workflow if it exists, otherwise direct handler)
+      // Execute the tool
       const toolInstance = registry.get(tool);
       if (!toolInstance) {
         return c.json({ error: `Tool not found: ${tool}` }, 404);
       }
 
-      // Most tools are workflows - execute via runner
+      // Check if tool has a direct handler (like send-gmail)
+      if (toolInstance.handler) {
+        // Direct tool execution
+        try {
+          const result = await toolInstance.handler(params, {
+            tenantId: tenantId || session.tenantId,
+            sessionKey: token,
+          });
+          return c.json(result);
+        } catch (error) {
+          return c.json({ error: String(error) }, 500);
+        }
+      }
+
+      // Otherwise, execute via workflow runner (for workflows like discover-businesses)
       try {
         const job = await runner.execute(tool, params, {
           tenantId: tenantId || session.tenantId,
