@@ -177,6 +177,17 @@ pub async fn start(port: u16) -> anyhow::Result<()> {
                         msg.content
                     );
                     
+                    let chat_id = msg.channel_id.clone();
+                    let telegram_for_typing = telegram_clone.clone();
+                    
+                    // Spawn typing indicator that runs until we're done
+                    let typing_task = tokio::spawn(async move {
+                        loop {
+                            let _ = telegram_for_typing.send_typing(&chat_id).await;
+                            tokio::time::sleep(tokio::time::Duration::from_secs(4)).await;
+                        }
+                    });
+                    
                     // Resolve user identity
                     let (user_id, _) = match state_clone
                         .identity_manager
@@ -184,6 +195,7 @@ pub async fn start(port: u16) -> anyhow::Result<()> {
                         .await {
                             Ok(result) => result,
                             Err(e) => {
+                                typing_task.abort();
                                 tracing::error!("Identity resolution error: {}", e);
                                 continue;
                             }
@@ -232,6 +244,24 @@ pub async fn start(port: u16) -> anyhow::Result<()> {
                         Ok(result) => {
                             let content = extract_content(&result);
                             let tool_results = find_and_execute_tools(&state_clone, &content, &result).await;
+                            
+                            // Stop typing indicator
+                            typing_task.abort();
+                            
+                            // Send status update if tools were called
+                            if !tool_results.is_empty() {
+                                let tool_names: Vec<&str> = tool_results.iter()
+                                    .map(|r| r.tool.as_str())
+                                    .collect();
+                                let status_msg = format!("🔧 Running: {}...", tool_names.join(", "));
+                                let _ = telegram_clone.send(crate::channels::OutgoingMessage {
+                                    channel_type: crate::channels::ChannelType::Telegram,
+                                    channel_id: msg.channel_id.clone(),
+                                    content: status_msg,
+                                    reply_to: None,
+                                    metadata: serde_json::json!({}),
+                                }).await;
+                            }
                             
                             // Get final response with Telegram formatting
                             let final_content = if tool_results.is_empty() {
@@ -306,6 +336,7 @@ pub async fn start(port: u16) -> anyhow::Result<()> {
                             }).await;
                         }
                         Err(e) => {
+                            typing_task.abort();
                             tracing::error!("LLM error: {}", e);
                             let _ = telegram_clone.send(crate::channels::OutgoingMessage {
                                 channel_type: crate::channels::ChannelType::Telegram,

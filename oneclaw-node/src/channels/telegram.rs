@@ -107,6 +107,23 @@ impl TelegramChannel {
 
         Ok(())
     }
+    
+    pub async fn send_typing(&self, channel_user_id: &str) -> Result<()> {
+        let chat_id: i64 = channel_user_id.parse()?;
+        let url = format!("{}/bot{}/sendChatAction", self.base_url, self.bot_token);
+
+        let client = reqwest::Client::new();
+        let _response = client
+            .post(&url)
+            .json(&serde_json::json!({
+                "chat_id": chat_id,
+                "action": "typing"
+            }))
+            .send()
+            .await?;
+
+        Ok(())
+    }
 }
 
 #[async_trait]
