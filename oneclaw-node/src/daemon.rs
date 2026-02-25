@@ -279,11 +279,34 @@ pub async fn start(port: u16) -> anyhow::Result<()> {
                                 // Give user time to see the status before final response
                                 tokio::time::sleep(tokio::time::Duration::from_millis(800)).await;
                                 
+                                // Extract and show steps completed (if harness returned them)
+                                for result in &tool_results {
+                                    if let Some(steps) = result.output.get("steps_completed").and_then(|s| s.as_array()) {
+                                        let mut steps_msg = String::from("📋 **Execution Steps:**\n\n");
+                                        for (i, step) in steps.iter().enumerate() {
+                                            if let Some(step_str) = step.as_str() {
+                                                steps_msg.push_str(&format!("{}. {}\n", i + 1, step_str));
+                                            }
+                                        }
+                                        
+                                        tracing::info!("Showing execution steps to user");
+                                        let _ = telegram_clone.send(crate::channels::OutgoingMessage {
+                                            channel_type: crate::channels::ChannelType::Telegram,
+                                            channel_id: msg.channel_id.clone(),
+                                            content: steps_msg,
+                                            reply_to: None,
+                                            metadata: serde_json::json!({}),
+                                        }).await;
+                                        
+                                        tokio::time::sleep(tokio::time::Duration::from_millis(500)).await;
+                                    }
+                                }
+                                
                                 // Send completion status
                                 let _ = telegram_clone.send(crate::channels::OutgoingMessage {
                                     channel_type: crate::channels::ChannelType::Telegram,
                                     channel_id: msg.channel_id.clone(),
-                                    content: "✅ Tool execution complete, formatting results...".to_string(),
+                                    content: "✅ Complete! Formatting results...".to_string(),
                                     reply_to: None,
                                     metadata: serde_json::json!({}),
                                 }).await;
