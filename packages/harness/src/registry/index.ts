@@ -11,7 +11,8 @@ import {
   DISCOVERY_TOOL, 
   CITATION_CHECK_TOOL,
   HVAC_CONTACT_TOOL,
-  GOLF_BOOKING_TOOL
+  GOLF_BOOKING_TOOL,
+  ENRICH_CONTACT_TOOL
 } from './schemas';
 
 // =============================================================================
@@ -159,6 +160,7 @@ registry.register(DISCOVERY_TOOL);  // discover-businesses
 registry.register(CITATION_CHECK_TOOL);
 // registry.register(HVAC_CONTACT_TOOL);  // DISABLED - use discover-businesses instead
 registry.register(GOLF_BOOKING_TOOL);
+registry.register(ENRICH_CONTACT_TOOL);  // NEW: Contact enrichment
 
 // =============================================================================
 // EXPORTS

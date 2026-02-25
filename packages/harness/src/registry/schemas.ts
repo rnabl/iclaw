@@ -497,3 +497,69 @@ export const GOLF_BOOKING_TOOL: ToolDefinition = {
   createdAt: new Date(),
   updatedAt: new Date(),
 };
+
+// =============================================================================
+// ENRICH CONTACT TOOL
+// =============================================================================
+
+const EnrichContactInput = z.object({
+  url: z.string().url().describe('Business website URL'),
+  businessName: z.string().optional().describe('Business name for context'),
+  city: z.string().optional(),
+  state: z.string().optional(),
+  method: z.enum(['auto', 'perplexity', 'dataforseo', 'linkedin']).default('auto').describe('Enrichment method'),
+});
+
+const EnrichContactOutput = z.object({
+  url: z.string(),
+  businessName: z.string().optional(),
+  owner: z.object({
+    name: z.string(),
+    title: z.string().optional(),
+    email: z.string().optional(),
+    phone: z.string().optional(),
+    linkedin: z.string().optional(),
+  }).nullable(),
+  contacts: z.array(z.object({
+    name: z.string(),
+    title: z.string().optional(),
+    email: z.string().optional(),
+    phone: z.string().optional(),
+  })),
+  company: z.object({
+    name: z.string().optional(),
+    industry: z.string().optional(),
+    companySize: z.string().optional(),
+  }).nullable(),
+  method: z.string(),
+  source: z.enum(['perplexity', 'dataforseo', 'linkedin', 'website_scrape']),
+});
+
+export const ENRICH_CONTACT_TOOL: ToolDefinition = {
+  id: 'enrich-contact',
+  name: 'Contact Enrichment',
+  description: 'Find owner/decision-maker contact information (name, email, phone) for a business given their website URL. Uses AI search (Perplexity), SERP data, LinkedIn, or website scraping.',
+  version: '1.0.0',
+  inputSchema: EnrichContactInput,
+  outputSchema: EnrichContactOutput,
+  requiredSecrets: [],
+  networkPolicy: {
+    allowedDomains: ['*'],
+    blockedDomains: [],
+    allowLocalhost: false,
+  },
+  costClass: 'medium',
+  estimatedCostUsd: 0.10,
+  retryPolicy: {
+    maxAttempts: 2,
+    backoffMs: 2000,
+    backoffMultiplier: 2,
+    retryableErrors: ['TIMEOUT', 'NETWORK_ERROR'],
+  },
+  timeoutMs: 90000,
+  idempotent: true,
+  isPublic: true,
+  tags: ['contact', 'enrichment', 'email', 'owner', 'decision-maker'],
+  createdAt: new Date(),
+  updatedAt: new Date(),
+};
