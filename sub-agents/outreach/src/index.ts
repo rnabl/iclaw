@@ -58,6 +58,13 @@ function getHarnessClient(): HarnessClient {
   const tenantId = process.env.TENANT_ID;
   const token = process.env.EPHEMERAL_TOKEN;
 
+  console.log('[Agent] Harness config:', { 
+    hasUrl: !!harnessUrl, 
+    hasTenant: !!tenantId, 
+    hasToken: !!token,
+    url: harnessUrl 
+  });
+
   if (harnessUrl && tenantId && token) {
     return createHarnessClient({ harnessUrl, tenantId, ephemeralToken: token });
   }

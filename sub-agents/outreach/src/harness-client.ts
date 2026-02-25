@@ -99,18 +99,26 @@ export function createHarnessClient(config: {
     },
 
     async sendEmail(to: string, subject: string, body: string, fromName?: string): Promise<{ success: boolean; messageId?: string; error?: string }> {
-      const result = await callHarness('send-gmail', {
-        to,
-        subject,
-        body,
-        fromName
-      }) as { success?: boolean; messageId?: string; error?: string };
-      
-      return {
-        success: result.success ?? false,
-        messageId: result.messageId,
-        error: result.error
-      };
+      try {
+        const result = await callHarness('send-gmail', {
+          to,
+          subject,
+          body,
+          fromName
+        }) as { success?: boolean; messageId?: string; error?: string };
+        
+        return {
+          success: result.success ?? false,
+          messageId: result.messageId,
+          error: result.error
+        };
+      } catch (error) {
+        console.error('[HarnessClient] sendEmail failed:', error);
+        return {
+          success: false,
+          error: String(error)
+        };
+      }
     }
   };
 }

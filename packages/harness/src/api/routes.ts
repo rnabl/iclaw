@@ -222,19 +222,59 @@ app.get('/secrets', async (c) => {
 // =============================================================================
 
 /**
- * Execute a workflow
+ * Execute a workflow or tool
  * POST /execute
- * Body: { workflowId, input, tenantId, tier?, sessionKey?, dryRun?, webhookUrl? }
+ * Body (workflow): { workflowId, input, tenantId, tier?, sessionKey?, dryRun?, webhookUrl? }
+ * Body (tool): { tool, params, context? }
  */
 app.post('/execute', async (c) => {
   try {
     const body = await c.req.json();
-    const { workflowId, input, tenantId, tier, sessionKey, dryRun, webhookUrl } = body;
     
+    // Check if this is a direct tool call (from sub-agent)
+    if (body.tool) {
+      const { tool, params } = body;
+      const authHeader = c.req.header('Authorization');
+      const tenantId = c.req.header('X-Tenant-Id');
+      
+      // Validate ephemeral token
+      if (!authHeader || !authHeader.startsWith('Bearer ')) {
+        return c.json({ error: 'Missing or invalid authorization' }, 401);
+      }
+      
+      const token = authHeader.substring(7);
+      const sessionData = await vault.get(`session:${token}`);
+      
+      if (!sessionData) {
+        return c.json({ error: 'Invalid or expired token' }, 401);
+      }
+      
+      const session = JSON.parse(sessionData);
+      if (session.expiresAt < Date.now()) {
+        return c.json({ error: 'Token expired' }, 401);
+      }
+      
+      // Execute the tool directly
+      const toolInstance = registry.get(tool);
+      if (!toolInstance) {
+        return c.json({ error: `Tool not found: ${tool}` }, 404);
+      }
+      
+      const result = await toolInstance.execute(params, {
+        tenantId: tenantId || session.tenantId,
+        sessionKey: token,
+      });
+      
+      return c.json(result);
+    }
+    
+    // Original workflow execution logic
+    const { workflowId, input, tenantId, tier, sessionKey, dryRun, webhookUrl } = body;
+
     if (!workflowId || !input || !tenantId) {
       return c.json({ error: 'Missing required fields: workflowId, input, tenantId' }, 400);
     }
-    
+
     const job = await runner.execute(workflowId, input, {
       tenantId,
       tier: tier || 'free',
@@ -242,7 +282,7 @@ app.post('/execute', async (c) => {
       dryRun,
       webhookUrl,
     });
-    
+
     return c.json({
       jobId: job.id,
       status: job.status,
@@ -250,7 +290,7 @@ app.post('/execute', async (c) => {
       error: job.error,
       cost: job.actualCostUsd,
     });
-    
+
   } catch (error) {
     return c.json({ error: redactSecrets(String(error)) }, 500);
   }
@@ -791,6 +831,19 @@ app.post('/agents/outreach/launch', async (c) => {
       const subAgentDir = join(workspaceRoot, 'sub-agents', 'outreach');
       const logDir = join(workspaceRoot, 'logs', 'agents');
       
+      // Create ephemeral session token for the sub-agent (1 hour TTL)
+      const crypto = await import('crypto');
+      const ephemeralToken = crypto.randomBytes(32).toString('hex');
+      const expiresAt = Date.now() + 60 * 60 * 1000; // 1 hour
+      
+      // Store the session token
+      await vault.set(`session:${ephemeralToken}`, JSON.stringify({
+        tenantId,
+        createdAt: Date.now(),
+        expiresAt,
+        purpose: 'outreach-agent'
+      }));
+      
       // Use node directly with tsx as ESM loader
       const isWindows = process.platform === 'win32';
       const npxCmd = isWindows ? 'npx.cmd' : 'npx';
@@ -809,6 +862,7 @@ app.post('/agents/outreach/launch', async (c) => {
           MAX_EMAILS: String(maxEmails || 5),
           DRY_RUN: String(dryRun !== false),
           TENANT_ID: tenantId,
+          EPHEMERAL_TOKEN: ephemeralToken,
           HARNESS_URL: getHarnessUrl(),
           LOG_DIR: logDir,
         }
