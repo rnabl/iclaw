@@ -277,6 +277,23 @@ pub async fn start(port: u16) -> anyhow::Result<()> {
                                 content
                             } else {
                                 tracing::info!("Building followup with tool results...");
+                                
+                                // TEMPORARY: Just send raw results to prove it works
+                                let mut response = String::from("✅ **Tool Results**\n\n");
+                                for result in &tool_results {
+                                    response.push_str(&format!("🔧 **{}**\n", result.tool));
+                                    response.push_str(&format!("```\n{}\n```\n\n", 
+                                        serde_json::to_string_pretty(&result.output)
+                                            .unwrap_or_default()
+                                            .chars()
+                                            .take(1000)
+                                            .collect::<String>()
+                                    ));
+                                }
+                                response.push_str("\n(Formatting disabled for debugging)");
+                                response
+                                
+                                /* DISABLED FORMATTING - WILL RE-ENABLE LATER
                                 for result in &tool_results {
                                     let _ = state_clone
                                         .conversation_manager
@@ -330,6 +347,7 @@ pub async fn start(port: u16) -> anyhow::Result<()> {
                                         "✅ Found businesses but had trouble formatting the results. Raw data was retrieved successfully.".to_string()
                                     }
                                 }
+                                */
                             };
                             
                             tracing::info!("Preparing final response...");
