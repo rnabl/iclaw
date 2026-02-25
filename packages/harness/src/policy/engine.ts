@@ -85,7 +85,7 @@ export const DEFAULT_POLICIES: Record<TenantTier, TenantPolicy> = {
     },
     maxConcurrentJobs: 1,
     maxJobDurationMs: 60000,  // 1 minute
-    allowedTools: ['audit-website', 'discover-businesses'],
+    allowedTools: ['audit-website', 'discover-businesses', 'send-gmail'],
     blockedTools: [],
   },
   starter: {
