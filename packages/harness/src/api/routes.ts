@@ -347,6 +347,38 @@ app.get('/jobs/:id', (c) => {
 });
 
 /**
+ * Get job status (lightweight for polling)
+ * GET /jobs/:id/status
+ */
+app.get('/jobs/:id/status', (c) => {
+  const jobId = c.req.param('id');
+  const job = runner.getJob(jobId);
+  
+  if (!job) {
+    return c.json({ error: 'Job not found' }, 404);
+  }
+  
+  return c.json({
+    jobId: job.id,
+    workflowId: job.workflowId,
+    status: job.status,
+    currentStep: job.currentStep,
+    totalSteps: job.totalSteps,
+    stepName: job.stepName,
+    progress: job.totalSteps > 0 ? Math.round((job.currentStep / job.totalSteps) * 100) : 0,
+    output: job.status === 'completed' ? job.output : undefined,
+    error: job.status === 'failed' ? job.error : undefined,
+    elapsedMs: job.startedAt ? Date.now() - job.startedAt.getTime() : 0,
+    // Include last 3 log entries for context
+    recentLogs: job.logs.slice(-3).map(log => ({
+      timestamp: log.timestamp,
+      level: log.level,
+      message: log.message,
+    })),
+  });
+});
+
+/**
  * List jobs for tenant
  * GET /jobs?tenantId=xxx&limit=50
  */
