@@ -812,7 +812,7 @@ app.post('/scheduler/stop', async (c) => {
 app.post('/agents/outreach/launch', async (c) => {
   try {
     const body = await c.req.json();
-    const { niche, location, senderName, senderEmail, maxEmails, dryRun, tenantId } = body;
+    const { niche, location, senderName, senderEmail, maxEmails, dryRun, tenantId, minReviews, maxReviews } = body;
 
     if (!niche || !location || !senderName || !senderEmail || !tenantId) {
       return c.json({ error: 'Missing required fields: niche, location, senderName, senderEmail, tenantId' }, 400);
@@ -888,6 +888,8 @@ app.post('/agents/outreach/launch', async (c) => {
           SENDER_NAME: senderName,
           SENDER_EMAIL: senderEmail,
           MAX_EMAILS: String(maxEmails || 5),
+          MIN_REVIEWS: String(minReviews || 10),
+          MAX_REVIEWS: String(maxReviews || 500),
           DRY_RUN: String(dryRun !== false),
           TENANT_ID: tenantId,
           EPHEMERAL_TOKEN: ephemeralToken,
