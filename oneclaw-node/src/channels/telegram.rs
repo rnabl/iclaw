@@ -139,7 +139,7 @@ impl Channel for TelegramChannel {
                 Ok(updates) => {
                     for update in updates {
                         if let Some(msg) = update.message {
-                            if let Some(text) = msg.text {
+                            if let Some(ref text) = msg.text {
                                 // Handle /start command
                                 if text.starts_with("/start") {
                                     let _ = self
