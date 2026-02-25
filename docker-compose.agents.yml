@@ -1,0 +1,85 @@
+# Docker Compose for Sub-Agents Architecture
+# 
+# Main Agent: Monitors logs, orchestrates
+# Sub-Agents: Run specific workflows in isolated containers
+#
+# Usage:
+#   docker-compose -f docker-compose.agents.yml up harness
+#   docker-compose -f docker-compose.agents.yml run --rm outreach-agent
+
+version: '3.8'
+
+services:
+  # Main Harness API (orchestrator)
+  harness:
+    build:
+      context: ./packages/harness
+      dockerfile: Dockerfile
+    ports:
+      - "9000:9000"
+    environment:
+      - NODE_ENV=production
+      - LOG_LEVEL=info
+    volumes:
+      # Shared log volume - main agent reads, sub-agents write
+      - agent-logs:/workspace/logs
+      # Credentials from host
+      - ./.env.local:/app/.env:ro
+    networks:
+      - agent-network
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # Outreach Sub-Agent (runs workflow, exits)
+  outreach-agent:
+    build:
+      context: ./sub-agents/outreach
+    depends_on:
+      harness:
+        condition: service_healthy
+    environment:
+      # Connection to harness
+      - HARNESS_URL=http://harness:9000
+      - TENANT_ID=${TENANT_ID:-default}
+      # Workflow config
+      - NICHE=${OUTREACH_NICHE:-HVAC}
+      - LOCATION=${OUTREACH_LOCATION:-Colorado}
+      - SENDER_NAME=${SENDER_NAME:-Ryan}
+      - SENDER_EMAIL=${SENDER_EMAIL:-ryan@example.com}
+      # Safety defaults
+      - DRY_RUN=${DRY_RUN:-true}
+      - MAX_EMAILS=${MAX_EMAILS:-5}
+      - EMAIL_DELAY_MS=5000
+      - MIN_REVIEWS=50
+      - MAX_REVIEWS=300
+      # Logging
+      - LOG_DIR=/workspace/logs
+    volumes:
+      - agent-logs:/workspace/logs
+    networks:
+      - agent-network
+    # Container exits when workflow completes
+    restart: "no"
+
+  # Log Monitor (optional - watches logs in real-time)
+  log-monitor:
+    image: busybox
+    command: tail -f /workspace/logs/*.jsonl
+    volumes:
+      - agent-logs:/workspace/logs:ro
+    networks:
+      - agent-network
+    restart: "no"
+    profiles:
+      - monitoring
+
+volumes:
+  agent-logs:
+    driver: local
+
+networks:
+  agent-network:
+    driver: bridge
