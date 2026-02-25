@@ -262,8 +262,8 @@ app.post('/execute', async (c) => {
       if (!toolInstance) {
         return c.json({ error: `Tool not found: ${tool}` }, 404);
       }
-      
-      const result = await toolInstance.execute(params, {
+
+      const result = await toolInstance.handler(params, {
         tenantId: tenantId || session.tenantId,
         sessionKey: token,
       });
