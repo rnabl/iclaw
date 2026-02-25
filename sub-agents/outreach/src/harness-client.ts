@@ -72,9 +72,10 @@ export function createHarnessClient(config: {
   return {
     async discover(query: string, location: string, maxResults = 20): Promise<DiscoveryResult[]> {
       const result = await callHarness('discover-businesses', {
-        query,
+        niche: query,  // Map query -> niche
         location,
-        maxResults
+        limit: maxResults,  // Map maxResults -> limit
+        enrich: false  // Don't need enrichment for sub-agent
       }) as { businesses?: DiscoveryResult[] };
       
       return result.businesses || [];
@@ -84,9 +85,10 @@ export function createHarnessClient(config: {
       // This would call an AI search tool to find competitors
       // For now, we'll simulate with the discovery endpoint
       const results = await callHarness('discover-businesses', {
-        query,
+        niche: query,  // Map query -> niche
         location,
-        maxResults: 5
+        limit: 5,  // Map maxResults -> limit
+        enrich: false
       }) as { businesses?: DiscoveryResult[] };
       
       const businesses = results.businesses || [];
