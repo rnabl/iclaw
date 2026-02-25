@@ -313,7 +313,10 @@ pub async fn start(port: u16) -> anyhow::Result<()> {
                                 
                                 match run_llm_with_timeout(Arc::clone(&state_clone), followup_input, "followup").await {
                                     Ok(result) => extract_content(&result),
-                                    _ => "Tool executed but could not generate summary.".to_string(),
+                                    Err(e) => {
+                                        tracing::error!("Followup formatting failed: {}", e);
+                                        "✅ Found businesses but had trouble formatting the results. Raw data was retrieved successfully.".to_string()
+                                    }
                                 }
                             };
                             
