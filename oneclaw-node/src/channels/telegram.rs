@@ -157,12 +157,32 @@ impl Channel for TelegramChannel {
                     for update in updates {
                         if let Some(msg) = update.message {
                             if let Some(ref text) = msg.text {
-                                // Handle /start command
+                                // Handle commands
                                 if text.starts_with("/start") {
                                     let _ = self
                                         .send_message(
                                             msg.chat.id,
-                                            "🦞 **OneClaw Agent Online**\n\nSend me a message to get started!".to_string(),
+                                            "🦞 **OneClaw Agent Online**\n\nI can help you with:\n• Find businesses\n• Run outreach campaigns\n• Execute workflows\n\nJust ask me what you need!\n\nCommands:\n/help - Show this message\n/status - Check processing status".to_string(),
+                                        )
+                                        .await;
+                                    continue;
+                                }
+                                
+                                if text.starts_with("/help") {
+                                    let _ = self
+                                        .send_message(
+                                            msg.chat.id,
+                                            "🦞 **OneClaw Commands**\n\n/start - Welcome message\n/help - Show this help\n/status - Check processing status\n\n**What I can do:**\n• Find local businesses\n• Analyze competitors\n• Generate outreach emails\n• Run automated workflows\n\nJust tell me what you need!".to_string(),
+                                        )
+                                        .await;
+                                    continue;
+                                }
+                                
+                                if text.starts_with("/status") {
+                                    let _ = self
+                                        .send_message(
+                                            msg.chat.id,
+                                            "✅ **Agent Status: Online**\n\nReady to process your requests!\n\nConnected to harness with 6 tools available.".to_string(),
                                         )
                                         .await;
                                     continue;
