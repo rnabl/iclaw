@@ -606,6 +606,25 @@ async fn execute_tool(
     tool_name: &str,
     tool_input: serde_json::Value,
 ) -> Option<ToolCallResult> {
+    execute_tool_internal(state, tool_name, tool_input, None).await
+}
+
+async fn execute_tool_with_progress(
+    state: &Arc<AppState>,
+    tool_name: &str,
+    tool_input: serde_json::Value,
+    telegram_sender: &crate::channels::telegram::TelegramChannel,
+    chat_id: &str,
+) -> Option<ToolCallResult> {
+    execute_tool_internal(state, tool_name, tool_input, Some((telegram_sender, chat_id))).await
+}
+
+async fn execute_tool_internal(
+    state: &Arc<AppState>,
+    tool_name: &str,
+    tool_input: serde_json::Value,
+    progress_callback: Option<(&crate::channels::telegram::TelegramChannel, &str)>,
+) -> Option<ToolCallResult> {
     let state = Arc::clone(state);
     let tool_name_owned = tool_name.to_string();
     let tool_input_for_result = tool_input.clone();

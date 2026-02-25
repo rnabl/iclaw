@@ -318,6 +318,14 @@ app.post('/execute', async (c) => {
       output: job.output,
       error: job.error,
       cost: job.actualCostUsd,
+      // NEW: Include execution summary
+      steps_completed: job.logs
+        .filter(log => log.level === 'info' && log.step)
+        .map(log => `${log.step}: ${log.message}`),
+      total_steps: job.totalSteps,
+      elapsed_ms: job.completedAt && job.startedAt 
+        ? job.completedAt.getTime() - job.startedAt.getTime() 
+        : 0,
     });
 
   } catch (error) {
