@@ -276,24 +276,9 @@ pub async fn start(port: u16) -> anyhow::Result<()> {
                                 tracing::info!("No tools used, returning direct content");
                                 content
                             } else {
-                                tracing::info!("Building followup with tool results...");
+                                tracing::info!("Tool results found, formatting for Telegram...");
                                 
-                                // TEMPORARY: Just send raw results to prove it works
-                                let mut response = String::from("✅ **Tool Results**\n\n");
-                                for result in &tool_results {
-                                    response.push_str(&format!("🔧 **{}**\n", result.tool));
-                                    response.push_str(&format!("```\n{}\n```\n\n", 
-                                        serde_json::to_string_pretty(&result.output)
-                                            .unwrap_or_default()
-                                            .chars()
-                                            .take(1000)
-                                            .collect::<String>()
-                                    ));
-                                }
-                                response.push_str("\n(Formatting disabled for debugging)");
-                                response
-                                
-                                /* DISABLED FORMATTING - WILL RE-ENABLE LATER
+                                // Save tool results to conversation
                                 for result in &tool_results {
                                     let _ = state_clone
                                         .conversation_manager
@@ -305,49 +290,53 @@ pub async fn start(port: u16) -> anyhow::Result<()> {
                                         .await;
                                 }
                                 
-                                tracing::info!("Preparing followup messages...");
-                                // Custom followup for Telegram with formatting instructions
-                                let mut followup_messages = messages.clone();
-                                for result in &tool_results {
-                                    let result_msg = format!(
-                                        "[Tool Result: {}]\n{}",
-                                        result.tool,
-                                        serde_json::to_string_pretty(&result.output).unwrap_or_default()
-                                    );
-                                    followup_messages.push(serde_json::json!({
-                                        "role": "system",
-                                        "content": result_msg
-                                    }));
-                                }
-                                followup_messages.push(serde_json::json!({
-                                    "role": "user",
-                                    "content": "Present these results in a friendly, easy-to-read format for Telegram:\n\n\
-                                    - Use **bold** for business names\n\
-                                    - Use emojis (⭐ for rating, 📞 for phone, ✅/❌ for status)\n\
-                                    - Format each business like:\n\n\
-                                    **Business Name** ⭐ 4.8\n\
-                                    📞 (720) 442-0474\n\
-                                    ✅ Has website | ✅ Reviews\n\n\
-                                    Keep it concise and mobile-friendly. No raw data or tool syntax."
-                                }));
+                                // Build a simpler prompt that just asks Claude to format, not regenerate
+                                let formatted_response = format!(
+                                    "I found the results. Here's a nicely formatted summary:\n\n{}",
+                                    content
+                                );
                                 
-                                let followup_input = serde_json::json!({ 
-                                    "messages": followup_messages,
-                                    "tools": claude_tools
-                                });
-                                
-                                tracing::info!("Calling LLM for followup formatting...");
-                                match run_llm_with_timeout(Arc::clone(&state_clone), followup_input, "followup").await {
-                                    Ok(result) => {
-                                        tracing::info!("✅ Followup formatting complete");
-                                        extract_content(&result)
-                                    },
-                                    Err(e) => {
-                                        tracing::error!("❌ Followup formatting failed: {}", e);
-                                        "✅ Found businesses but had trouble formatting the results. Raw data was retrieved successfully.".to_string()
+                                // If content is already good, use it directly
+                                if content.contains("**") || content.contains("⭐") {
+                                    tracing::info!("Content already formatted, using directly");
+                                    formatted_response
+                                } else {
+                                    tracing::info!("Content needs formatting, asking Claude...");
+                                    // Ask Claude to format the raw tool output
+                                    let mut followup_messages = vec![
+                                        serde_json::json!({
+                                            "role": "user",
+                                            "content": format!(
+                                                "Format this business data for Telegram with:\n\
+                                                - **Bold** business names\n\
+                                                - ⭐ ratings, 📞 phones\n\
+                                                - ✅/❌ for features\n\
+                                                - Quick stats summary\n\n\
+                                                Data: {}",
+                                                serde_json::to_string_pretty(&tool_results[0].output)
+                                                    .unwrap_or_default()
+                                                    .chars()
+                                                    .take(4000)
+                                                    .collect::<String>()
+                                            )
+                                        })
+                                    ];
+                                    
+                                    let simple_input = serde_json::json!({ 
+                                        "messages": followup_messages
+                                    });
+                                    
+                                    match run_llm_with_timeout(Arc::clone(&state_clone), simple_input, "format").await {
+                                        Ok(result) => {
+                                            tracing::info!("✅ Formatting complete");
+                                            extract_content(&result)
+                                        },
+                                        Err(e) => {
+                                            tracing::error!("❌ Formatting failed: {}", e);
+                                            formatted_response
+                                        }
                                     }
                                 }
-                                */
                             };
                             
                             tracing::info!("Preparing final response...");
