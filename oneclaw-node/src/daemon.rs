@@ -233,7 +233,7 @@ pub async fn start(port: u16) -> anyhow::Result<()> {
                             let content = extract_content(&result);
                             let tool_results = find_and_execute_tools(&state_clone, &content, &result).await;
                             
-                            // Get final response
+                            // Get final response with Telegram formatting
                             let final_content = if tool_results.is_empty() {
                                 content
                             } else {
@@ -247,7 +247,41 @@ pub async fn start(port: u16) -> anyhow::Result<()> {
                                         )
                                         .await;
                                 }
-                                get_followup_response(&state_clone, &messages, &tool_results).await
+                                
+                                // Custom followup for Telegram with formatting instructions
+                                let mut followup_messages = messages.clone();
+                                for result in &tool_results {
+                                    let result_msg = format!(
+                                        "[Tool Result: {}]\n{}",
+                                        result.tool,
+                                        serde_json::to_string_pretty(&result.output).unwrap_or_default()
+                                    );
+                                    followup_messages.push(serde_json::json!({
+                                        "role": "system",
+                                        "content": result_msg
+                                    }));
+                                }
+                                followup_messages.push(serde_json::json!({
+                                    "role": "user",
+                                    "content": "Present these results in a friendly, easy-to-read format for Telegram:\n\n\
+                                    - Use **bold** for business names\n\
+                                    - Use emojis (⭐ for rating, 📞 for phone, ✅/❌ for status)\n\
+                                    - Format each business like:\n\n\
+                                    **Business Name** ⭐ 4.8\n\
+                                    📞 (720) 442-0474\n\
+                                    ✅ Has website | ✅ Reviews\n\n\
+                                    Keep it concise and mobile-friendly. No raw data or tool syntax."
+                                }));
+                                
+                                let followup_input = serde_json::json!({ 
+                                    "messages": followup_messages,
+                                    "tools": claude_tools
+                                });
+                                
+                                match run_llm_with_timeout(Arc::clone(&state_clone), followup_input, "followup").await {
+                                    Ok(result) => extract_content(&result),
+                                    _ => "Tool executed but could not generate summary.".to_string(),
+                                }
                             };
                             
                             let final_content = if final_content.trim().is_empty() {
