@@ -172,7 +172,7 @@ impl Channel for TelegramChannel {
                                     let _ = self
                                         .send_message(
                                             msg.chat.id,
-                                            "🦞 **OneClaw Commands**\n\n/start - Welcome message\n/help - Show this help\n/status - Check processing status\n\n**What I can do:**\n• Find local businesses\n• Analyze competitors\n• Generate outreach emails\n• Run automated workflows\n\nJust tell me what you need!".to_string(),
+                                            "🦞 **OneClaw Commands**\n\n/start - Welcome message\n/help - Show this help\n/status - Check agent status\n/logs - View recent logs\n\n**What I can do:**\n• Find local businesses\n• Analyze competitors\n• Generate outreach emails\n• Run automated workflows\n\nJust tell me what you need!".to_string(),
                                         )
                                         .await;
                                     continue;
@@ -185,6 +185,32 @@ impl Channel for TelegramChannel {
                                             "✅ **Agent Status: Online**\n\nReady to process your requests!\n\nConnected to harness with 6 tools available.".to_string(),
                                         )
                                         .await;
+                                    continue;
+                                }
+                                
+                                if text.starts_with("/logs") {
+                                    // Read recent logs from journalctl
+                                    let logs_output = std::process::Command::new("journalctl")
+                                        .args(&["-u", "oneclaw-node", "-n", "20", "--no-pager"])
+                                        .output();
+                                    
+                                    let log_text = match logs_output {
+                                        Ok(output) => {
+                                            let stdout = String::from_utf8_lossy(&output.stdout);
+                                            let lines: Vec<&str> = stdout.lines()
+                                                .filter(|l| !l.contains("systemd[1]"))
+                                                .take(15)
+                                                .collect();
+                                            if lines.is_empty() {
+                                                "📋 No recent logs available".to_string()
+                                            } else {
+                                                format!("📋 **Recent Logs**\n\n```\n{}\n```", lines.join("\n"))
+                                            }
+                                        }
+                                        Err(e) => format!("❌ Could not fetch logs: {}", e)
+                                    };
+                                    
+                                    let _ = self.send_message(msg.chat.id, log_text).await;
                                     continue;
                                 }
 
