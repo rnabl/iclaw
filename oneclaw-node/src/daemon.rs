@@ -195,8 +195,9 @@ pub async fn start(port: u16) -> anyhow::Result<()> {
                         .add_user_message(&user_id, &msg.content, "telegram")
                         .await;
                     
-                    // Build system prompt
-                    let system_prompt = state_clone.agent_os.build_system_prompt(&state_clone.harness_tools);
+                    // Build system prompt with Telegram formatting instructions
+                    let mut system_prompt = state_clone.agent_os.build_system_prompt(&state_clone.harness_tools);
+                    system_prompt.push_str("\n\n## Telegram Formatting\nYou are communicating via Telegram. Format your responses to be:\n- Concise and easy to read on mobile\n- Use **bold** for business names and key info\n- Use bullet points (•) for lists\n- Avoid raw CLI output - present data in a friendly way\n- When showing businesses, format like:\n\n**Business Name** ⭐ 4.8\n📞 (720) 442-0474\n✅ Has website | ✅ Has reviews\n");
                     
                     // Build messages
                     let messages = match state_clone
