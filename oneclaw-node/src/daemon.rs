@@ -261,6 +261,9 @@ pub async fn start(port: u16) -> anyhow::Result<()> {
                                     reply_to: None,
                                     metadata: serde_json::json!({}),
                                 }).await;
+                                
+                                // Give user time to see the status before final response
+                                tokio::time::sleep(tokio::time::Duration::from_millis(800)).await;
                             }
                             
                             // Get final response with Telegram formatting
