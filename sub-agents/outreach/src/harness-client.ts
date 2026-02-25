@@ -71,7 +71,7 @@ export function createHarnessClient(config: {
 
   return {
     async discover(query: string, location: string, maxResults = 20): Promise<DiscoveryResult[]> {
-      const result = await callHarness('discover_businesses', {
+      const result = await callHarness('discover-businesses', {
         query,
         location,
         maxResults
@@ -83,7 +83,7 @@ export function createHarnessClient(config: {
     async findCompetitor(businessName: string, query: string, location: string): Promise<string | null> {
       // This would call an AI search tool to find competitors
       // For now, we'll simulate with the discovery endpoint
-      const results = await callHarness('discover_businesses', {
+      const results = await callHarness('discover-businesses', {
         query,
         location,
         maxResults: 5
