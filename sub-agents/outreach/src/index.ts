@@ -112,11 +112,14 @@ async function runOutreachWorkflow(): Promise<void> {
     stats.discovered = businesses.length;
     logger.info('discovery_complete', `Found ${businesses.length} businesses`);
 
-    // Step 2: Filter by review count
-    const qualified = businesses.filter(b => {
-      const reviews = b.reviews || 0;
-      return reviews >= config.minReviews && reviews <= config.maxReviews;
-    });
+    // Step 2: Filter by review count (skip filter if range is 0-999999)
+    let qualified = businesses;
+    if (config.minReviews > 0 || config.maxReviews < 999999) {
+      qualified = businesses.filter(b => {
+        const reviews = b.reviews || 0;
+        return reviews >= config.minReviews && reviews <= config.maxReviews;
+      });
+    }
 
     stats.qualified = qualified.length;
     logger.info('filtering_complete', `${qualified.length}/${businesses.length} meet review criteria`, {
