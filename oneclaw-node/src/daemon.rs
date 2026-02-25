@@ -243,6 +243,16 @@ pub async fn start(port: u16) -> anyhow::Result<()> {
                     match run_llm_with_timeout(Arc::clone(&state_clone), input, "main").await {
                         Ok(result) => {
                             tracing::info!("✅ LLM response received");
+                            
+                            // Send initial thinking message
+                            let _ = telegram_clone.send(crate::channels::OutgoingMessage {
+                                channel_type: crate::channels::ChannelType::Telegram,
+                                channel_id: msg.channel_id.clone(),
+                                content: "💭 Analyzing your request...".to_string(),
+                                reply_to: None,
+                                metadata: serde_json::json!({}),
+                            }).await;
+                            
                             let content = extract_content(&result);
                             tracing::info!("✅ Content extracted, looking for tools...");
                             let tool_results = find_and_execute_tools(&state_clone, &content, &result).await;
@@ -256,8 +266,8 @@ pub async fn start(port: u16) -> anyhow::Result<()> {
                                 let tool_names: Vec<&str> = tool_results.iter()
                                     .map(|r| r.tool.as_str())
                                     .collect();
-                                let status_msg = format!("🔧 Running: {}...", tool_names.join(", "));
-                                tracing::info!("Sending status update: {}", status_msg);
+                                let status_msg = format!("🔧 Executing: {}...", tool_names.join(", "));
+                                tracing::info!("Tool execution started: {}", status_msg);
                                 let _ = telegram_clone.send(crate::channels::OutgoingMessage {
                                     channel_type: crate::channels::ChannelType::Telegram,
                                     channel_id: msg.channel_id.clone(),
@@ -268,6 +278,15 @@ pub async fn start(port: u16) -> anyhow::Result<()> {
                                 
                                 // Give user time to see the status before final response
                                 tokio::time::sleep(tokio::time::Duration::from_millis(800)).await;
+                                
+                                // Send completion status
+                                let _ = telegram_clone.send(crate::channels::OutgoingMessage {
+                                    channel_type: crate::channels::ChannelType::Telegram,
+                                    channel_id: msg.channel_id.clone(),
+                                    content: "✅ Tool execution complete, formatting results...".to_string(),
+                                    reply_to: None,
+                                    metadata: serde_json::json!({}),
+                                }).await;
                             }
                             
                             tracing::info!("Starting followup formatting...");
@@ -366,11 +385,16 @@ pub async fn start(port: u16) -> anyhow::Result<()> {
                         }
                         Err(e) => {
                             typing_task.abort();
-                            tracing::error!("LLM error: {}", e);
+                            tracing::error!("❌ LLM error: {}", e);
+                            
+                            // Send detailed error to user
+                            let error_msg = format!("❌ **Error Processing Request**\n\n{}\n\nCheck `/logs` for details.", 
+                                e.to_string().chars().take(200).collect::<String>());
+                            
                             let _ = telegram_clone.send(crate::channels::OutgoingMessage {
                                 channel_type: crate::channels::ChannelType::Telegram,
                                 channel_id: msg.channel_id,
-                                content: "Sorry, I encountered an error processing your message.".to_string(),
+                                content: error_msg,
                                 reply_to: None,
                                 metadata: serde_json::json!({}),
                             }).await;
