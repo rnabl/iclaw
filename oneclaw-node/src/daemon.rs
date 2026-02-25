@@ -242,8 +242,11 @@ pub async fn start(port: u16) -> anyhow::Result<()> {
                     
                     match run_llm_with_timeout(Arc::clone(&state_clone), input, "main").await {
                         Ok(result) => {
+                            tracing::info!("✅ LLM response received");
                             let content = extract_content(&result);
+                            tracing::info!("✅ Content extracted, looking for tools...");
                             let tool_results = find_and_execute_tools(&state_clone, &content, &result).await;
+                            tracing::info!("✅ Tools executed: {} results", tool_results.len());
                             
                             // Stop typing indicator
                             typing_task.abort();
@@ -254,6 +257,7 @@ pub async fn start(port: u16) -> anyhow::Result<()> {
                                     .map(|r| r.tool.as_str())
                                     .collect();
                                 let status_msg = format!("🔧 Running: {}...", tool_names.join(", "));
+                                tracing::info!("Sending status update: {}", status_msg);
                                 let _ = telegram_clone.send(crate::channels::OutgoingMessage {
                                     channel_type: crate::channels::ChannelType::Telegram,
                                     channel_id: msg.channel_id.clone(),
@@ -266,10 +270,13 @@ pub async fn start(port: u16) -> anyhow::Result<()> {
                                 tokio::time::sleep(tokio::time::Duration::from_millis(800)).await;
                             }
                             
+                            tracing::info!("Starting followup formatting...");
                             // Get final response with Telegram formatting
                             let final_content = if tool_results.is_empty() {
+                                tracing::info!("No tools used, returning direct content");
                                 content
                             } else {
+                                tracing::info!("Building followup with tool results...");
                                 for result in &tool_results {
                                     let _ = state_clone
                                         .conversation_manager
@@ -281,6 +288,7 @@ pub async fn start(port: u16) -> anyhow::Result<()> {
                                         .await;
                                 }
                                 
+                                tracing::info!("Preparing followup messages...");
                                 // Custom followup for Telegram with formatting instructions
                                 let mut followup_messages = messages.clone();
                                 for result in &tool_results {
@@ -311,27 +319,34 @@ pub async fn start(port: u16) -> anyhow::Result<()> {
                                     "tools": claude_tools
                                 });
                                 
+                                tracing::info!("Calling LLM for followup formatting...");
                                 match run_llm_with_timeout(Arc::clone(&state_clone), followup_input, "followup").await {
-                                    Ok(result) => extract_content(&result),
+                                    Ok(result) => {
+                                        tracing::info!("✅ Followup formatting complete");
+                                        extract_content(&result)
+                                    },
                                     Err(e) => {
-                                        tracing::error!("Followup formatting failed: {}", e);
+                                        tracing::error!("❌ Followup formatting failed: {}", e);
                                         "✅ Found businesses but had trouble formatting the results. Raw data was retrieved successfully.".to_string()
                                     }
                                 }
                             };
                             
+                            tracing::info!("Preparing final response...");
                             let final_content = if final_content.trim().is_empty() {
                                 "I didn't get a response. Try again?".to_string()
                             } else {
                                 final_content
                             };
                             
+                            tracing::info!("Saving conversation messages...");
                             // Save assistant message
                             let _ = state_clone
                                 .conversation_manager
                                 .add_assistant_message(&user_id, &final_content, "telegram", None)
                                 .await;
                             
+                            tracing::info!("Sending final response to Telegram...");
                             // Send reply via Telegram
                             let _ = telegram_clone.send(crate::channels::OutgoingMessage {
                                 channel_type: crate::channels::ChannelType::Telegram,
@@ -340,6 +355,7 @@ pub async fn start(port: u16) -> anyhow::Result<()> {
                                 reply_to: None,
                                 metadata: serde_json::json!({}),
                             }).await;
+                            tracing::info!("✅ Telegram response sent successfully");
                         }
                         Err(e) => {
                             typing_task.abort();
