@@ -7,6 +7,7 @@
 //! - HTTP: REST API (handled by daemon.rs)
 
 pub mod discord;
+pub mod telegram;
 
 use async_trait::async_trait;
 use serde::{Deserialize, Serialize};

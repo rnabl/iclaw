@@ -151,6 +151,143 @@ pub async fn start(port: u16) -> anyhow::Result<()> {
         });
     }
 
+    // Initialize Telegram channel if bot token is configured
+    if let Ok(bot_token) = std::env::var("TELEGRAM_BOT_TOKEN") {
+        if !bot_token.is_empty() && bot_token != "your_telegram_bot_token_here" {
+            use crate::channels::{telegram::TelegramChannel, Channel};
+            
+            let telegram = TelegramChannel::new(bot_token);
+            let (tx, mut rx) = tokio::sync::mpsc::channel(100);
+            
+            // Spawn Telegram listener
+            let telegram_clone = telegram.clone();
+            tokio::spawn(async move {
+                if let Err(e) = telegram_clone.start(tx).await {
+                    tracing::error!("Telegram channel error: {}", e);
+                }
+            });
+            
+            // Spawn message handler
+            let state_clone = state.clone();
+            let telegram_clone = telegram.clone();
+            tokio::spawn(async move {
+                while let Some(msg) = rx.recv().await {
+                    tracing::info!("📨 Telegram message from {}: {}", 
+                        msg.username.as_deref().unwrap_or("unknown"),
+                        msg.content
+                    );
+                    
+                    // Resolve user identity
+                    let (user_id, _) = match state_clone
+                        .identity_manager
+                        .resolve("telegram", &msg.provider_user_id, msg.username.as_deref())
+                        .await {
+                            Ok(result) => result,
+                            Err(e) => {
+                                tracing::error!("Identity resolution error: {}", e);
+                                continue;
+                            }
+                        };
+                    
+                    // Store user message
+                    let _ = state_clone
+                        .conversation_manager
+                        .add_user_message(&user_id, &msg.content, "telegram")
+                        .await;
+                    
+                    // Build system prompt
+                    let system_prompt = state_clone.agent_os.build_system_prompt(&state_clone.harness_tools);
+                    
+                    // Build messages
+                    let messages = match state_clone
+                        .conversation_manager
+                        .build_llm_messages(&user_id, &system_prompt)
+                        .await {
+                            Ok(msgs) => msgs,
+                            Err(e) => {
+                                tracing::error!("Message building error: {}", e);
+                                continue;
+                            }
+                        };
+                    
+                    // Convert harness tools to Claude format
+                    let claude_tools: Vec<serde_json::Value> = state_clone.harness_tools
+                        .iter()
+                        .map(|tool| {
+                            serde_json::json!({
+                                "name": tool.id,
+                                "description": tool.description,
+                                "input_schema": tool.params_schema
+                            })
+                        })
+                        .collect();
+                    
+                    let input = serde_json::json!({ 
+                        "messages": messages,
+                        "tools": claude_tools
+                    });
+                    
+                    match run_llm_with_timeout(Arc::clone(&state_clone), input, "main").await {
+                        Ok(result) => {
+                            let content = extract_content(&result);
+                            let tool_results = find_and_execute_tools(&state_clone, &content, &result).await;
+                            
+                            // Get final response
+                            let final_content = if tool_results.is_empty() {
+                                content
+                            } else {
+                                for result in &tool_results {
+                                    let _ = state_clone
+                                        .conversation_manager
+                                        .add_tool_message(
+                                            &user_id,
+                                            &format!("[{} result]", result.tool),
+                                            "telegram",
+                                        )
+                                        .await;
+                                }
+                                get_followup_response(&state_clone, &messages, &tool_results).await
+                            };
+                            
+                            let final_content = if final_content.trim().is_empty() {
+                                "I didn't get a response. Try again?".to_string()
+                            } else {
+                                final_content
+                            };
+                            
+                            // Save assistant message
+                            let _ = state_clone
+                                .conversation_manager
+                                .add_assistant_message(&user_id, &final_content, "telegram", None)
+                                .await;
+                            
+                            // Send reply via Telegram
+                            let _ = telegram_clone.send(crate::channels::OutgoingMessage {
+                                channel_type: crate::channels::ChannelType::Telegram,
+                                channel_id: msg.channel_id,
+                                content: final_content,
+                                reply_to: None,
+                                metadata: serde_json::json!({}),
+                            }).await;
+                        }
+                        Err(e) => {
+                            tracing::error!("LLM error: {}", e);
+                            let _ = telegram_clone.send(crate::channels::OutgoingMessage {
+                                channel_type: crate::channels::ChannelType::Telegram,
+                                channel_id: msg.channel_id,
+                                content: "Sorry, I encountered an error processing your message.".to_string(),
+                                reply_to: None,
+                                metadata: serde_json::json!({}),
+                            }).await;
+                        }
+                    }
+                }
+            });
+            
+            tracing::info!("✅ Telegram channel initialized");
+        }
+    }
+
     let app = Router::new()
         .route("/", get(ui_dashboard))
         .route("/chat.html", get(ui_chat))
