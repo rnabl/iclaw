@@ -150,16 +150,16 @@ async function enrichViaDataForSEO(
 }
 
 /**
- * Method 3: Apify LinkedIn - $0.15+ per search
- * Full contact data with emails, company info, team list
+ * Method 3: Apify LinkedIn (code_crafter/leads-finder) - $0.15+ per search
+ * Full LinkedIn profile enrichment
  */
-async function enrichViaLinkedIn(
+async function enrichViaApifyLeadFinder(
   ctx: StepContext,
   url: string,
   businessName?: string
 ): Promise<{ owner: ContactPerson | null; contacts: ContactPerson[]; company: CompanyInfo | null } | null> {
   
-  await ctx.log('info', `Enriching via Apify LinkedIn for ${url}`);
+  await ctx.log('info', `Enriching via Apify lead-finder (code_crafter/leads-finder) for ${url}`);
   
   try {
     const result = await findContacts({ url, businessName });
@@ -196,9 +196,21 @@ async function enrichViaLinkedIn(
     };
     
   } catch (error) {
-    await ctx.log('warn', `LinkedIn enrichment failed: ${error}`);
+    await ctx.log('warn', `Apify lead-finder enrichment failed: ${error}`);
     throw error;
   }
+}
+
+/**
+ * Method 3 alias: enrichViaLinkedIn points to Apify lead-finder
+ * Keeping for backward compatibility in the waterfall
+ */
+async function enrichViaLinkedIn(
+  ctx: StepContext,
+  url: string,
+  businessName?: string
+): Promise<{ owner: ContactPerson | null; contacts: ContactPerson[]; company: CompanyInfo | null } | null> {
+  return enrichViaApifyLeadFinder(ctx, url, businessName);
 }
 
 /**
@@ -256,67 +268,194 @@ async function enrichContactHandler(
   input: Record<string, unknown>
 ): Promise<EnrichContactOutput> {
   const params = EnrichContactInput.parse(input);
-  const { url, businessName } = params;
+  const { url, businessName, city, state, method: preferredMethod } = params;
   
   const startTime = Date.now();
   
   await ctx.log('info', `Starting contact enrichment for ${url}`);
   
-  let contact: ContactInfo | null = null;
-  let method = 'unknown';
+  let owner: ContactPerson | null = null;
+  let contacts: ContactPerson[] = [];
+  let company: CompanyInfo | null = null;
+  let source: 'perplexity' | 'dataforseo' | 'linkedin' | 'website_scrape' = 'website_scrape';
   let cost = 0;
+  let fallbackUsed = false;
   
   // ==========================================================================
-  // STEP 1: Try Apify lead-finder first (if configured)
+  // STEP 1: Try Apify lead-finder first (code_crafter/leads-finder)
   // ==========================================================================
-  const APIFY_LEAD_FINDER_ACTOR = process.env.APIFY_LEAD_FINDER_ACTOR;
-  
-  if (APIFY_LEAD_FINDER_ACTOR && APIFY_LEAD_FINDER_ACTOR !== 'YOUR_ACTOR_ID_HERE') {
-    runner.updateStep(ctx.jobId, 1, 'Extracting via Apify lead-finder', 2);
+  try {
+    await ctx.log('info', 'Attempting Apify lead-finder (code_crafter/leads-finder)');
+    const apifyResult = await enrichViaApifyLeadFinder(ctx, url, businessName);
     
-    try {
-      contact = await enrichViaApifyLeadFinder(ctx, url, businessName);
-      method = 'apify_lead_finder';
-      cost = 0.10; // Apify actor cost
+    if (apifyResult && apifyResult.owner) {
+      owner = apifyResult.owner;
+      contacts = apifyResult.contacts || [];
+      company = apifyResult.company || null;
+      source = 'linkedin';
+      cost = 0.15;
       
+      await ctx.log('info', 'Apify lead-finder found contact successfully');
       ctx.recordApiCall('apify', 'lead_finder', 1);
       
-    } catch (error) {
-      await ctx.log('warn', `Apify failed: ${error}, falling back to scraping`);
+      const timeMs = Date.now() - startTime;
+      return {
+        url,
+        businessName,
+        owner,
+        contacts,
+        company,
+        method: 'apify',
+        source,
+        timeMs,
+        cost,
+        fallbackUsed: false,
+      };
     }
+  } catch (error) {
+    await ctx.log('warn', `Apify lead-finder failed: ${error}, falling back to blended enrichment`);
+    fallbackUsed = true;
   }
   
   // ==========================================================================
-  // STEP 2: Fallback to website scraping
+  // STEP 2: Fallback to Blended Enrichment (Perplexity -> DataForSEO -> LinkedIn)
   // ==========================================================================
-  if (!contact) {
-    runner.updateStep(ctx.jobId, 2, 'Scraping website for contact', 2);
-    
+  
+  // Try Perplexity first (cheapest)
+  if (businessName) {
     try {
-      contact = await enrichViaWebsiteScrape(ctx, url);
-      method = 'website_scrape';
-      cost = 0.02; // Just HTTP fetch + regex
+      await ctx.log('info', 'Trying Perplexity AI enrichment');
+      const perplexityResult = await enrichViaPerplexity(ctx, businessName, city, state);
       
+      if (perplexityResult && perplexityResult.owner) {
+        owner = perplexityResult.owner;
+        source = 'perplexity';
+        cost = 0.005;
+        
+        await ctx.log('info', 'Perplexity found owner contact');
+        ctx.recordApiCall('perplexity', 'research', 1);
+        
+        const timeMs = Date.now() - startTime;
+        return {
+          url,
+          businessName,
+          owner,
+          contacts: [],
+          company: null,
+          method: 'perplexity',
+          source,
+          timeMs,
+          cost,
+          fallbackUsed: true,
+        };
+      }
     } catch (error) {
-      await ctx.log('error', `Website scrape failed: ${error}`);
+      await ctx.log('warn', `Perplexity failed: ${error}`);
     }
+  }
+  
+  // Try DataForSEO (medium cost)
+  if (businessName) {
+    try {
+      await ctx.log('info', 'Trying DataForSEO SERP enrichment');
+      const dataForSEOResult = await enrichViaDataForSEO(ctx, businessName, city, state);
+      
+      if (dataForSEOResult && dataForSEOResult.owner) {
+        owner = dataForSEOResult.owner;
+        source = 'dataforseo';
+        cost = 0.10;
+        
+        await ctx.log('info', 'DataForSEO found owner contact');
+        ctx.recordApiCall('dataforseo', 'serp', 1);
+        
+        const timeMs = Date.now() - startTime;
+        return {
+          url,
+          businessName,
+          owner,
+          contacts: [],
+          company: null,
+          method: 'dataforseo',
+          source,
+          timeMs,
+          cost,
+          fallbackUsed: true,
+        };
+      }
+    } catch (error) {
+      await ctx.log('warn', `DataForSEO failed: ${error}`);
+    }
+  }
+  
+  // Try direct LinkedIn search (most expensive, last resort)
+  try {
+    await ctx.log('info', 'Trying direct LinkedIn enrichment');
+    const linkedInResult = await enrichViaLinkedIn(ctx, url, businessName);
+    
+    if (linkedInResult && linkedInResult.owner) {
+      owner = linkedInResult.owner;
+      contacts = linkedInResult.contacts || [];
+      company = linkedInResult.company || null;
+      source = 'linkedin';
+      cost = 0.15;
+      
+      await ctx.log('info', 'LinkedIn found contacts');
+      ctx.recordApiCall('linkedin', 'profile_search', 1);
+      
+      const timeMs = Date.now() - startTime;
+      return {
+        url,
+        businessName,
+        owner,
+        contacts,
+        company,
+        method: 'linkedin',
+        source,
+        timeMs,
+        cost,
+        fallbackUsed: true,
+      };
+    }
+  } catch (error) {
+    await ctx.log('warn', `LinkedIn failed: ${error}`);
+  }
+  
+  // ==========================================================================
+  // STEP 3: Last resort - website scraping
+  // ==========================================================================
+  try {
+    await ctx.log('info', 'Final fallback: website scraping');
+    const scrapeResult = await enrichViaWebsiteScrape(ctx, url);
+    
+    if (scrapeResult && scrapeResult.owner) {
+      owner = scrapeResult.owner;
+      source = 'website_scrape';
+      cost = 0.02;
+    }
+  } catch (error) {
+    await ctx.log('warn', `Website scrape failed: ${error}`);
   }
   
   const timeMs = Date.now() - startTime;
   
-  await ctx.log('info', contact ? 'Contact enrichment successful' : 'No contact info found', {
-    method,
+  await ctx.log('info', owner ? 'Contact enrichment successful' : 'No contact info found', {
+    source,
     timeMs,
     cost,
+    fallbackUsed,
   });
   
   return {
     url,
     businessName,
-    contact,
-    method,
+    owner,
+    contacts,
+    company,
+    method: owner ? source : 'none',
+    source,
     timeMs,
     cost,
+    fallbackUsed,
   };
 }
 
