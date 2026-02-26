@@ -261,6 +261,110 @@ pub async fn start(port: u16) -> anyhow::Result<()> {
                             // Stop typing indicator
                             typing_task.abort();
                             
+                            // Check if this is a complex multi-step request requiring autonomous job
+                            let is_complex = crate::autonomous_jobs::is_complex_request(&msg.content, &tool_results);
+                            
+                            if is_complex {
+                                tracing::info!("🤖 Complex request detected, creating autonomous job plan");
+                                
+                                // Get LLM API key from environment
+                                let api_key = std::env::var("ANTHROPIC_API_KEY")
+                                    .unwrap_or_else(|_| std::env::var("OPENAI_API_KEY").unwrap_or_default());
+                                
+                                if api_key.is_empty() {
+                                    tracing::warn!("No LLM API key found, falling back to simple execution");
+                                } else {
+                                    // Generate job plan
+                                    match crate::autonomous_jobs::generate_job_plan(
+                                        &msg.content,
+                                        &reqwest::Client::new(),
+                                        &api_key
+                                    ).await {
+                                        Ok(plan) => {
+                                            tracing::info!("✅ Generated plan with {} steps", plan.steps.len());
+                                            
+                                            // Send acknowledgment
+                                            let _ = telegram_clone.send(crate::channels::OutgoingMessage {
+                                                channel_type: crate::channels::ChannelType::Telegram,
+                                                channel_id: msg.channel_id.clone(),
+                                                content: format!("🦞 Got it! Breaking this into {} steps...", plan.steps.len()),
+                                                reply_to: None,
+                                                metadata: serde_json::json!({}),
+                                            }).await;
+                                            
+                                            // Create job in harness
+                                            match crate::autonomous_jobs::create_harness_job(
+                                                &user_id,
+                                                &plan,
+                                                &harness_url
+                                            ).await {
+                                                Ok(job_id) => {
+                                                    tracing::info!("✅ Created job: {}", job_id);
+                                                    
+                                                    // Start polling in background
+                                                    let poller = crate::autonomous_jobs_poller::JobPoller::new(
+                                                        job_id.clone(),
+                                                        msg.channel_id.clone(),
+                                                        crate::channels::ChannelType::Telegram,
+                                                        harness_url.clone()
+                                                    );
+                                                    
+                                                    let telegram_for_polling = telegram_clone.clone();
+                                                    let user_id_for_conv = user_id.clone();
+                                                    let conv_manager = state_clone.conversation_manager.clone();
+                                                    
+                                                    tokio::spawn(async move {
+                                                        match poller.run_until_complete(Arc::new(telegram_for_polling.clone())).await {
+                                                            Ok(results) => {
+                                                                tracing::info!("✅ Job completed, formatting results");
+                                                                
+                                                                // Format and send final results
+                                                                let formatted = crate::autonomous_jobs_poller::format_job_results(&results);
+                                                                
+                                                                // Save to conversation
+                                                                let _ = conv_manager.add_assistant_message(
+                                                                    &user_id_for_conv,
+                                                                    &formatted,
+                                                                    "telegram",
+                                                                    None
+                                                                ).await;
+                                                                
+                                                                let _ = telegram_for_polling.send(crate::channels::OutgoingMessage {
+                                                                    channel_type: crate::channels::ChannelType::Telegram,
+                                                                    channel_id: msg.channel_id.clone(),
+                                                                    content: formatted,
+                                                                    reply_to: None,
+                                                                    metadata: serde_json::json!({}),
+                                                                }).await;
+                                                            }
+                                                            Err(e) => {
+                                                                tracing::error!("❌ Job execution failed: {}", e);
+                                                                let _ = telegram_for_polling.send(crate::channels::OutgoingMessage {
+                                                                    channel_type: crate::channels::ChannelType::Telegram,
+                                                                    channel_id: msg.channel_id.clone(),
+                                                                    content: format!("❌ Job failed: {}\n\nTry `/logs` for details.", e),
+                                                                    reply_to: None,
+                                                                    metadata: serde_json::json!({}),
+                                                                }).await;
+                                                            }
+                                                        }
+                                                    });
+                                                    
+                                                    // Don't continue with normal flow - job is running in background
+                                                    continue;
+                                                }
+                                                Err(e) => {
+                                                    tracing::error!("Failed to create job: {}", e);
+                                                }
+                                            }
+                                        }
+                                        Err(e) => {
+                                            tracing::error!("Failed to generate plan: {}", e);
+                                        }
+                                    }
+                                }
+                            }
+                            
                             // Send status update if tools were called
                             if !tool_results.is_empty() {
                                 let tool_names: Vec<&str> = tool_results.iter()

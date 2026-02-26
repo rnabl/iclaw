@@ -426,6 +426,422 @@ app.post('/jobs/:id/cancel', async (c) => {
   return c.json({ success });
 });
 
+// =============================================================================
+// AUTONOMOUS JOB SYSTEM
+// =============================================================================
+
+/**
+ * Create and execute a multi-step autonomous job
+ * POST /jobs/execute
+ * Body: { userId, description, plan: JobStep[] }
+ */
+app.post('/jobs/execute', async (c) => {
+  try {
+    const { getDatabase } = await import('../database');
+    const db = getDatabase();
+    const body = await c.req.json();
+    const { userId, description, plan } = body;
+
+    if (!userId || !description || !plan || !Array.isArray(plan)) {
+      return c.json({ error: 'Missing required fields: userId, description, plan' }, 400);
+    }
+
+    // Create job in SQLite
+    const job = db.createJob({ userId, description, plan });
+
+    // Start async execution (don't block response)
+    executeJobAsync(job.id, db);
+
+    return c.json({
+      jobId: job.id,
+      status: job.status,
+      totalSteps: job.totalSteps,
+    });
+  } catch (error) {
+    return c.json({ error: redactSecrets(String(error)) }, 500);
+  }
+});
+
+/**
+ * Get autonomous job status (lightweight for polling)
+ * GET /autonomous-jobs/:id/status
+ */
+app.get('/autonomous-jobs/:id/status', async (c) => {
+  try {
+    const { getDatabase } = await import('../database');
+    const db = getDatabase();
+    const jobId = c.req.param('id');
+
+    const job = db.getJob(jobId);
+    if (!job) {
+      return c.json({ error: 'Job not found' }, 404);
+    }
+
+    return c.json({
+      jobId: job.id,
+      status: job.status,
+      currentStep: job.currentStep,
+      totalSteps: job.totalSteps,
+      steps: job.plan.map(step => ({
+        id: step.id,
+        order: step.order,
+        action: step.action,
+        status: step.status,
+        result: step.result,
+      })),
+      error: job.error,
+      elapsedMs: Date.now() - job.startedAt.getTime(),
+    });
+  } catch (error) {
+    return c.json({ error: redactSecrets(String(error)) }, 500);
+  }
+});
+
+/**
+ * Get autonomous job results
+ * GET /autonomous-jobs/:id/results
+ */
+app.get('/autonomous-jobs/:id/results', async (c) => {
+  try {
+    const { getDatabase } = await import('../database');
+    const db = getDatabase();
+    const jobId = c.req.param('id');
+
+    const job = db.getJob(jobId);
+    if (!job) {
+      return c.json({ error: 'Job not found' }, 404);
+    }
+
+    const businesses = db.getBusinessesByJob(jobId);
+    const contacts = db.getContactsByJob(jobId);
+    const logs = db.getLogsByJob(jobId, 50);
+
+    return c.json({
+      job: {
+        id: job.id,
+        description: job.description,
+        status: job.status,
+        startedAt: job.startedAt,
+        completedAt: job.completedAt,
+      },
+      businesses,
+      contacts,
+      logs,
+    });
+  } catch (error) {
+    return c.json({ error: redactSecrets(String(error)) }, 500);
+  }
+});
+
+/**
+ * List autonomous jobs for user
+ * GET /autonomous-jobs?userId=xxx&limit=50
+ */
+app.get('/autonomous-jobs', async (c) => {
+  try {
+    const { getDatabase } = await import('../database');
+    const db = getDatabase();
+    const userId = c.req.query('userId');
+    const limit = parseInt(c.req.query('limit') || '50');
+
+    if (!userId) {
+      return c.json({ error: 'Missing userId' }, 400);
+    }
+
+    const jobs = db.getJobsByUser(userId, limit);
+    return c.json({ jobs });
+  } catch (error) {
+    return c.json({ error: redactSecrets(String(error)) }, 500);
+  }
+});
+
+/**
+ * Search businesses across all jobs
+ * GET /autonomous-jobs/search/businesses?userId=xxx&query=xxx
+ */
+app.get('/autonomous-jobs/search/businesses', async (c) => {
+  try {
+    const { getDatabase } = await import('../database');
+    const db = getDatabase();
+    const userId = c.req.query('userId');
+    const query = c.req.query('query');
+    const limit = parseInt(c.req.query('limit') || '50');
+
+    if (!userId || !query) {
+      return c.json({ error: 'Missing userId or query' }, 400);
+    }
+
+    const businesses = db.searchBusinesses(userId, query, limit);
+    return c.json({ businesses });
+  } catch (error) {
+    return c.json({ error: redactSecrets(String(error)) }, 500);
+  }
+});
+
+/**
+ * Cancel an autonomous job
+ * POST /autonomous-jobs/:id/cancel
+ */
+app.post('/autonomous-jobs/:id/cancel', async (c) => {
+  try {
+    const { getDatabase } = await import('../database');
+    const db = getDatabase();
+    const jobId = c.req.param('id');
+
+    const job = db.updateJobStatus(jobId, 'cancelled');
+    if (!job) {
+      return c.json({ error: 'Job not found' }, 404);
+    }
+
+    return c.json({ success: true, job });
+  } catch (error) {
+    return c.json({ error: redactSecrets(String(error)) }, 500);
+  }
+});
+
+// =============================================================================
+// AUTONOMOUS JOB HISTORY QUERY TOOLS
+// =============================================================================
+
+/**
+ * Query tool: Get a specific job's results
+ * This is callable by the LLM via the tool registry
+ */
+async function tool_get_job(params: { jobId: string; userId: string }) {
+  const { getDatabase } = await import('../database');
+  const db = getDatabase();
+  
+  const job = db.getJob(params.jobId);
+  if (!job || job.userId !== params.userId) {
+    return { error: 'Job not found or access denied' };
+  }
+  
+  const businesses = db.getBusinessesByJob(params.jobId);
+  const contacts = db.getContactsByJob(params.jobId);
+  
+  return {
+    job: {
+      id: job.id,
+      description: job.description,
+      status: job.status,
+      startedAt: job.startedAt,
+      completedAt: job.completedAt,
+    },
+    businesses: businesses.slice(0, 20), // Limit for LLM context
+    contacts: contacts.slice(0, 20),
+    totalBusinesses: businesses.length,
+    totalContacts: contacts.length,
+  };
+}
+
+/**
+ * Query tool: List user's job history
+ */
+async function tool_list_jobs(params: { userId: string; limit?: number }) {
+  const { getDatabase } = await import('../database');
+  const db = getDatabase();
+  
+  const jobs = db.getJobsByUser(params.userId, params.limit || 20);
+  
+  return {
+    jobs: jobs.map(j => ({
+      id: j.id,
+      description: j.description,
+      status: j.status,
+      totalSteps: j.totalSteps,
+      startedAt: j.startedAt,
+      completedAt: j.completedAt,
+    })),
+  };
+}
+
+/**
+ * Query tool: Search businesses across all jobs
+ */
+async function tool_search_businesses(params: { userId: string; query: string; limit?: number }) {
+  const { getDatabase } = await import('../database');
+  const db = getDatabase();
+  
+  const businesses = db.searchBusinesses(params.userId, params.query, params.limit || 50);
+  
+  return {
+    businesses: businesses.map(b => ({
+      name: b.name,
+      address: b.address,
+      city: b.city,
+      state: b.state,
+      phone: b.phone,
+      website: b.website,
+      rating: b.rating,
+      reviewCount: b.reviewCount,
+    })),
+    total: businesses.length,
+  };
+}
+
+// Register these as callable tools (daemon will fetch via /tools endpoint)
+// Note: These are exported for the daemon to discover and use
+
+/**
+ * Helper function to execute job asynchronously
+ * This runs in the background and updates the database as it progresses
+ */
+async function executeJobAsync(jobId: string, db: any) {
+  try {
+    // Mark job as running
+    db.updateJobStatus(jobId, 'running');
+    db.addLog({
+      jobId,
+      level: 'info',
+      message: 'Job execution started',
+    });
+
+    const job = db.getJob(jobId);
+    if (!job) {
+      throw new Error('Job not found');
+    }
+
+    // Execute each step in the plan
+    for (let i = 0; i < job.plan.length; i++) {
+      const step = job.plan[i];
+
+      // Update step status
+      step.status = 'running';
+      step.startedAt = new Date();
+      db.updateJob(jobId, { plan: job.plan });
+      db.addLog({
+        jobId,
+        level: 'info',
+        step: step.order,
+        message: `Executing step ${step.order}: ${step.action}`,
+      });
+
+      try {
+        // Execute the step based on action type
+        const result = await executeStep(step, db, jobId);
+        
+        // Update step as completed
+        step.status = 'completed';
+        step.completedAt = new Date();
+        step.result = result;
+        db.updateJob(jobId, { plan: job.plan });
+        db.advanceJobStep(jobId);
+        
+        db.addLog({
+          jobId,
+          level: 'info',
+          step: step.order,
+          message: `Step ${step.order} completed successfully`,
+        });
+
+      } catch (error) {
+        // Step failed
+        step.status = 'failed';
+        step.error = String(error);
+        step.completedAt = new Date();
+        db.updateJob(jobId, { plan: job.plan });
+        
+        db.addLog({
+          jobId,
+          level: 'error',
+          step: step.order,
+          message: `Step ${step.order} failed: ${error}`,
+        });
+
+        throw error; // Stop execution on first error
+      }
+    }
+
+    // All steps completed successfully
+    db.updateJobStatus(jobId, 'completed');
+    db.addLog({
+      jobId,
+      level: 'info',
+      message: 'Job completed successfully',
+    });
+
+  } catch (error) {
+    // Job failed
+    db.updateJobStatus(jobId, 'failed', String(error));
+    db.addLog({
+      jobId,
+      level: 'error',
+      message: `Job failed: ${error}`,
+    });
+  }
+}
+
+/**
+ * Execute a single job step
+ * Maps step actions to actual workflow execution
+ */
+async function executeStep(step: any, db: any, jobId: string) {
+  const { action, params } = step;
+
+  // Map actions to workflow IDs
+  const workflowMap: Record<string, string> = {
+    discover: 'discover-businesses',
+    enrich: 'enrich-contact',
+    audit: 'audit-website',
+    analyze: 'analyze-business',
+  };
+
+  const workflowId = workflowMap[action];
+  if (!workflowId) {
+    throw new Error(`Unknown action: ${action}`);
+  }
+
+  // Execute via existing runner
+  const job = await runner.execute(workflowId, params, {
+    tenantId: 'autonomous-system', // Special tenant for autonomous jobs
+    tier: 'free',
+  });
+
+  if (job.status === 'completed') {
+    // Store businesses if this is a discovery step
+    if (action === 'discover' && job.output?.businesses) {
+      const businesses = job.output.businesses.map((b: any) => ({
+        jobId,
+        name: b.title || b.name,
+        address: b.address,
+        city: b.city,
+        state: b.state,
+        zipCode: b.zip_code,
+        phone: b.phone,
+        website: b.website,
+        rating: b.rating,
+        reviewCount: b.review_count,
+        googleMapsUrl: b.url,
+        placeId: b.place_id,
+        metadata: b,
+      }));
+      
+      db.createBusinesses(businesses);
+    }
+
+    // Store contacts if this is an enrichment step
+    if (action === 'enrich' && job.output?.contacts) {
+      const contacts = job.output.contacts.map((c: any) => ({
+        businessId: c.businessId, // This needs to be mapped from step params
+        name: c.name,
+        email: c.email,
+        phone: c.phone,
+        role: c.role,
+        linkedinUrl: c.linkedin_url,
+        source: c.source || 'unknown',
+        confidence: c.confidence || 50,
+        metadata: c,
+      }));
+      
+      db.createContacts(contacts);
+    }
+
+    return job.output;
+  } else {
+    throw new Error(job.error || `Workflow ${workflowId} failed`);
+  }
+}
+
 /**
  * Switch execution method for a running job
  * POST /jobs/:id/switch-method

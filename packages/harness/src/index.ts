@@ -117,3 +117,7 @@ export { harnessApi } from './api';
 // Billing & Pricing
 export * from './billing';
 export * from './pricing';
+
+// Database (Autonomous Job System)
+export { JobDatabase, getDatabase, closeDatabase } from './database';
+export type { Job, JobStep, Business, Contact, JobLog } from './database/schema';

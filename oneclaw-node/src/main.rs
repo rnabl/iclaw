@@ -1,4 +1,6 @@
 mod agent_os;
+mod autonomous_jobs;
+mod autonomous_jobs_poller;
 mod channels;
 mod config;
 mod conversation;

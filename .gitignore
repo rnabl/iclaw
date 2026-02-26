@@ -54,4 +54,8 @@ deploy-quick.sh
 # Internal progress tracking
 PROGRESS.md
 
+# Task Master internal docs (keep private)
+.taskmaster/
+.cursor/
+
 .env.production

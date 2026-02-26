@@ -12,7 +12,10 @@ import {
   CITATION_CHECK_TOOL,
   HVAC_CONTACT_TOOL,
   GOLF_BOOKING_TOOL,
-  ENRICH_CONTACT_TOOL
+  ENRICH_CONTACT_TOOL,
+  GET_JOB_TOOL,
+  LIST_JOBS_TOOL,
+  SEARCH_BUSINESSES_TOOL
 } from './schemas';
 
 // =============================================================================
@@ -160,7 +163,12 @@ registry.register(DISCOVERY_TOOL);  // discover-businesses
 registry.register(CITATION_CHECK_TOOL);
 // registry.register(HVAC_CONTACT_TOOL);  // DISABLED - use discover-businesses instead
 registry.register(GOLF_BOOKING_TOOL);
-registry.register(ENRICH_CONTACT_TOOL);  // NEW: Contact enrichment
+registry.register(ENRICH_CONTACT_TOOL);  // Contact enrichment
+
+// Job history query tools
+registry.register(GET_JOB_TOOL);
+registry.register(LIST_JOBS_TOOL);
+registry.register(SEARCH_BUSINESSES_TOOL);
 
 // =============================================================================
 // EXPORTS

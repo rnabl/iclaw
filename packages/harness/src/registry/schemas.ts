@@ -563,3 +563,149 @@ export const ENRICH_CONTACT_TOOL: ToolDefinition = {
   createdAt: new Date(),
   updatedAt: new Date(),
 };
+
+// =============================================================================
+// JOB HISTORY QUERY TOOLS
+// =============================================================================
+
+const GetJobInput = z.object({
+  jobId: z.string().describe('Job ID to retrieve'),
+  userId: z.string().describe('User ID for access control'),
+});
+
+const GetJobOutput = z.object({
+  job: z.object({
+    id: z.string(),
+    description: z.string(),
+    status: z.string(),
+    startedAt: z.string(),
+    completedAt: z.string().nullable(),
+  }),
+  businesses: z.array(z.any()),
+  contacts: z.array(z.any()),
+  totalBusinesses: z.number(),
+  totalContacts: z.number(),
+});
+
+export const GET_JOB_TOOL: ToolDefinition = {
+  id: 'get-job',
+  name: 'Get Job Results',
+  description: 'Retrieve results from a previously completed autonomous job. Returns businesses, contacts, and job details.',
+  version: '1.0.0',
+  inputSchema: GetJobInput,
+  outputSchema: GetJobOutput,
+  requiredSecrets: [],
+  networkPolicy: {
+    allowedDomains: [],
+    blockedDomains: [],
+    allowLocalhost: true,
+  },
+  costClass: 'free',
+  estimatedCostUsd: 0,
+  retryPolicy: {
+    maxAttempts: 1,
+    backoffMs: 0,
+    backoffMultiplier: 1,
+    retryableErrors: [],
+  },
+  timeoutMs: 5000,
+  idempotent: true,
+  isPublic: true,
+  tags: ['job', 'history', 'query', 'results'],
+  createdAt: new Date(),
+  updatedAt: new Date(),
+};
+
+const ListJobsInput = z.object({
+  userId: z.string().describe('User ID to list jobs for'),
+  limit: z.number().optional().default(20).describe('Maximum number of jobs to return'),
+});
+
+const ListJobsOutput = z.object({
+  jobs: z.array(z.object({
+    id: z.string(),
+    description: z.string(),
+    status: z.string(),
+    totalSteps: z.number(),
+    startedAt: z.string(),
+    completedAt: z.string().nullable(),
+  })),
+});
+
+export const LIST_JOBS_TOOL: ToolDefinition = {
+  id: 'list-jobs',
+  name: 'List Job History',
+  description: 'List all autonomous jobs for a user. Shows job descriptions, status, and completion times.',
+  version: '1.0.0',
+  inputSchema: ListJobsInput,
+  outputSchema: ListJobsOutput,
+  requiredSecrets: [],
+  networkPolicy: {
+    allowedDomains: [],
+    blockedDomains: [],
+    allowLocalhost: true,
+  },
+  costClass: 'free',
+  estimatedCostUsd: 0,
+  retryPolicy: {
+    maxAttempts: 1,
+    backoffMs: 0,
+    backoffMultiplier: 1,
+    retryableErrors: [],
+  },
+  timeoutMs: 5000,
+  idempotent: true,
+  isPublic: true,
+  tags: ['job', 'history', 'list'],
+  createdAt: new Date(),
+  updatedAt: new Date(),
+};
+
+const SearchBusinessesInput = z.object({
+  userId: z.string().describe('User ID for access control'),
+  query: z.string().describe('Search query (business name, city, state)'),
+  limit: z.number().optional().default(50).describe('Maximum number of results'),
+});
+
+const SearchBusinessesOutput = z.object({
+  businesses: z.array(z.object({
+    name: z.string(),
+    address: z.string().nullable(),
+    city: z.string().nullable(),
+    state: z.string().nullable(),
+    phone: z.string().nullable(),
+    website: z.string().nullable(),
+    rating: z.number().nullable(),
+    reviewCount: z.number().nullable(),
+  })),
+  total: z.number(),
+});
+
+export const SEARCH_BUSINESSES_TOOL: ToolDefinition = {
+  id: 'search-businesses',
+  name: 'Search Business Database',
+  description: 'Search across all previously discovered businesses. Useful for finding specific businesses or filtering by location.',
+  version: '1.0.0',
+  inputSchema: SearchBusinessesInput,
+  outputSchema: SearchBusinessesOutput,
+  requiredSecrets: [],
+  networkPolicy: {
+    allowedDomains: [],
+    blockedDomains: [],
+    allowLocalhost: true,
+  },
+  costClass: 'free',
+  estimatedCostUsd: 0,
+  retryPolicy: {
+    maxAttempts: 1,
+    backoffMs: 0,
+    backoffMultiplier: 1,
+    retryableErrors: [],
+  },
+  timeoutMs: 5000,
+  idempotent: true,
+  isPublic: true,
+  tags: ['business', 'search', 'database', 'query'],
+  createdAt: new Date(),
+  updatedAt: new Date(),
+};
